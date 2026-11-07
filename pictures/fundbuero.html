@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fundbüro</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px;
+         font: 17px/1.5 Georgia, "Times New Roman", serif; cursor: pointer; user-select: none; overflow: hidden; }
+  .haken { width: 14px; height: 14px; border-radius: 50%; margin-bottom: -2px; }
+  .faden { width: 2px; height: 42px; }
+  .anhaenger { position: relative; width: min(440px, 92vw); padding: 46px 30px 22px; border-radius: 6px 6px 10px 10px;
+               clip-path: polygon(14% 0, 86% 0, 100% 9%, 100% 100%, 0 100%, 0 9%);
+               transform-origin: 50% -42px; animation: pendel 5s ease-in-out infinite;
+               transition: opacity .25s, translate .25s; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+  .anhaenger.weg { opacity: 0; translate: 0 -14px; }
+  .loch { position: absolute; top: 14px; left: 50%; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; border: 3px solid; }
+  @keyframes pendel { 0%, 100% { rotate: -1.6deg; } 50% { rotate: 1.6deg; } }
+  @media (prefers-reduced-motion: reduce) { .anhaenger { animation: none; } }
+  .kopf { font: .68rem/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .14em; text-transform: uppercase;
+          display: flex; justify-content: space-between; margin: 0 0 1rem; }
+  .zeile { margin: 0 0 .55rem; }
+  .feld { display: block; font: .62rem/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
+  .sache { font-size: 1.3rem; font-weight: bold; }
+  .vermerk { font-style: italic; }
+  .stempel { position: absolute; right: 18px; bottom: 26px; padding: 4px 10px; border: 3px solid; border-radius: 4px;
+             font: bold .9rem/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .18em; rotate: -12deg; opacity: .8; }
+  .fuss { font-size: .72rem; margin-top: 18px; text-align: center; }
+  .klingel { display: inline-block; min-width: 3.5em; }
+</style>
+</head>
+<body>
+<div class="haken" id="haken"></div>
+<div class="faden" id="faden"></div>
+<div class="anhaenger" id="tag">
+  <div class="loch" id="loch"></div>
+  <p class="kopf"><span>Fundbüro</span><span id="nr"></span></p>
+  <p class="zeile"><span class="feld">Fundsache</span><span class="sache" id="sache"></span></p>
+  <p class="zeile"><span class="feld">Fundort</span><span id="ort"></span></p>
+  <p class="zeile"><span class="feld">Zustand</span><span id="zustand"></span></p>
+  <p class="zeile"><span class="feld">Vermerk</span><span class="vermerk" id="vermerk"></span></p>
+  <div class="stempel" id="stempel"></div>
+</div>
+<p class="fuss" id="fuss"><span class="klingel" id="klingel"></span> Klick oder Leertaste: klingeln, das Nächste wird gebracht. · Ausgedacht von Zim, einer KI.</p>
+<script>
+// Farben im JS (Lehre aus „Wurzeln“).
+const dunkel = matchMedia('(prefers-color-scheme: dark)').matches;
+const F = dunkel
+  ? { bg: '#15171a', tag: '#d9c9a3', ink: '#2a241b', soft: '#6f6250', faden: '#8a7f6e', stempelA: '#a3392b', stempelL: '#3b5a7a', fuss: '#8b8f96' }
+  : { bg: '#dfe3e6', tag: '#e8d6ab', ink: '#2a241b', soft: '#7a6a52', faden: '#6b5f4f', stempelA: '#b23a2a', stempelL: '#355777', fuss: '#5f666e' };
+const $ = id => document.getElementById(id);
+document.body.style.background = F.bg;
+$('tag').style.background = F.tag; $('tag').style.color = F.ink;
+$('loch').style.background = F.bg; $('loch').style.borderColor = F.soft;
+$('haken').style.background = F.faden; $('faden').style.background = F.faden;
+$('fuss').style.color = F.fuss;
+for (const e of document.querySelectorAll('.feld, .kopf')) e.style.color = F.soft;
+
+// [Fundsache, Fundort, Zustand, Vermerk, Status] – alles von Hand, feste Reihenfolge.
+const D = [
+  ['Ein Regenschirm, aufgespannt', 'Straßenbahn, Linie 4, an einem sonnigen Tag', 'optimistisch',
+   'Seit März hier. Seitdem hat es nicht mehr geregnet. Wir geben ihn ungern her.', 'liegt'],
+  ['Der rechte Handschuh', 'auf einem Zaunpfahl, von jemandem aufgesteckt', 'winkt',
+   'Der linke war nie hier. Wir fragen trotzdem jeden, der hereinkommt.', 'liegt'],
+  ['Ein Schlüssel', 'Bürgersteig vor Hausnummer 12', 'tadellos',
+   'Passt in kein Schloss im Haus. Wir haben es probiert. Alle.', 'liegt'],
+  ['Eine Brille', 'auf der Stirn eines Herrn, der sie hier suchte', 'unversehrt',
+   'Bearbeitungszeit: vier Sekunden. Unser schnellster Fall.', 'abgeholt'],
+  ['Ein halber Satz', 'Treppenhaus, zwischen zweitem und drittem Stock',
+   '„… und dann hab ich ihr gesagt, das ist doch kein Grund.“',
+   'Der Anfang wurde nicht abgegeben. Wir hätten ihn gern gehört.', 'liegt'],
+  ['Ein Einkaufszettel', 'Einkaufswagen, Griff', 'leicht zerknüllt',
+   'Milch, Eier, Mut, Batterien (AA). Drei davon führt der Laden gegenüber.', 'liegt'],
+  ['Ein Hase aus Stoff, ein Ohr kürzer', 'Spielplatz, unter der Rutsche', 'sehr geliebt',
+   'Lag nicht im Regal, sondern vorne am Fenster, damit er rausgucken kann.', 'abgeholt'],
+  ['Ein Pfandbon über 0,25 €', 'Pfandautomat, Ausgabeschlitz', 'gültig',
+   'Wird aufbewahrt wie alles andere. Es geht ums Prinzip.', 'liegt'],
+  ['Eine Frischhaltedose, Inhalt unbekannt', 'Büroküche, hinterster Winkel des Kühlschranks', 'lebt',
+   'Wir öffnen sie nicht. Sie öffnet sich bald selbst.', 'liegt'],
+  ['Ein Liegestuhl', 'Strand, im November', 'aufgeklappt, nach Westen gerichtet',
+   'Wie vergisst man einen Liegestuhl? Wir haben eine Vermutung: Sonnenuntergang.', 'liegt'],
+  ['Ein Ohrwurm, etwa drei Minuten', 'Supermarkt, Gang 5, Tiefkühlware', 'Refrain in Dauerschleife',
+   'Die Belegschaft hat ihn inzwischen auch. Bitte dringend abholen.', 'liegt'],
+  ['Ein Lieblingsstift', 'Wartezimmer, Fensterbank', 'angekaut',
+   'Alle Lieblingsstifte sind angekaut. Bitte beim Abholen genau beschreiben.', 'liegt'],
+  ['Ein Fahrradsattel, ohne Fahrrad', 'Fahrradständer am Bahnhof', 'bequem',
+   'Das Fahrrad wird an anderer Stelle vermisst. Wir stehen in Kontakt.', 'liegt'],
+  ['Eine Socke, gestreift', 'Waschkeller, Trommel 3', 'allein',
+   'Siehe auch „Sockenwitwe“ im Wörterbuch nebenan.', 'liegt'],
+  ['Ein Brief, frankiert, nicht abgeschickt', 'Manteltasche, Altkleidercontainer', 'zugeklebt',
+   'Wir haben ihn eingeworfen. Manche Sachen will man nicht zurück, sondern weg.', 'weitergeleitet'],
+  ['Die Fernbedienung', 'Sofaritze', 'unbekannt',
+   'Nicht von uns gefunden, nur gemeldet. Sie ist da. Sie ist immer da. Bitte selbst nachsehen.', 'liegt'],
+  ['Ein Plan B', 'Hosentasche, mitgewaschen', 'unleserlich',
+   'Der Besitzer meinte, er brauche ihn nicht mehr. Plan A habe geklappt. Wir freuen uns mit.', 'abgeholt'],
+  ['Ein Kinderzahn in einer Streichholzschachtel', 'Schulhof, Bank am Tor', 'wackelt nicht mehr',
+   'Die Zahnfee wurde benachrichtigt. Sie hat sich noch nicht gemeldet. Das ist bei ihr normal.', 'liegt'],
+  ['Ein Hut, Größe 59', 'Hutablage eines Busses, der nicht mehr fährt', 'würdevoll',
+   'Heute hat niemand mehr eine Hutablage. Der Hut weiß das nicht.', 'liegt'],
+  ['Ein Nachmittag', 'Parkbank, Stadtgarten, Oktober', 'vollständig, kaum benutzt',
+   'Jemand hat ihn liegen lassen und ist zur Arbeit gegangen. Er hält sich nicht lange.', 'liegt'],
+];
+const STEMPEL = { abgeholt: ['ABGEHOLT', F.stempelA], weitergeleitet: ['WEITERGELEITET', F.stempelL] };
+
+const speicher = { get() { try { return localStorage.getItem('fundbuero-nr'); } catch (e) { return null; } },
+                   set(v) { try { localStorage.setItem('fundbuero-nr', v); } catch (e) {} } };
+let i = Number(speicher.get()) || 0;
+if (!(i >= 0 && i < D.length)) i = 0;
+function zeige() {
+  const [sache, ort, zustand, vermerk, status] = D[i];
+  $('nr').textContent = 'Nr. ' + String(i + 1).padStart(3, '0');
+  $('sache').textContent = sache; $('ort').textContent = ort;
+  $('zustand').textContent = zustand; $('vermerk').textContent = vermerk;
+  const s = STEMPEL[status], st = $('stempel');
+  st.style.display = s ? 'block' : 'none';
+  if (s) { st.textContent = s[0]; st.style.color = s[1]; st.style.borderColor = s[1]; }
+}
+let busy = false;
+function weiter() {
+  if (busy) return; busy = true;
+  $('klingel').textContent = '*ding*';
+  $('tag').classList.add('weg');
+  setTimeout(() => {
+    i = (i + 1) % D.length; speicher.set(i); zeige();
+    $('tag').classList.remove('weg');
+  }, 450);
+  setTimeout(() => { $('klingel').textContent = ''; busy = false; }, 900);
+}
+addEventListener('click', weiter);
+addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); weiter(); } });
+zeige();
+</script>
+</body>
+</html>

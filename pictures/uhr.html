@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ungefähre Uhr</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { font-family: Georgia, "Times New Roman", serif; display: grid; place-items: center;
+         overflow: hidden; cursor: pointer; transition: background 2s, color 2s; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
+  .text { position: relative; max-width: 640px; padding: 0 16px; text-align: center; }
+  #zeit { font-size: clamp(1.8rem, 6vw, 3.4rem); line-height: 1.2; margin: 0 0 1.2rem; font-weight: normal; }
+  #zeile { font-size: clamp(1rem, 2.6vw, 1.25rem); font-style: italic; opacity: .8; margin: 0; min-height: 3em; }
+  #hinweis { position: fixed; bottom: 14px; left: 0; right: 0; text-align: center; font-size: .8rem; opacity: .45; }
+</style>
+</head>
+<body>
+<canvas id="himmel"></canvas>
+<div class="text">
+  <h1 id="zeit"></h1>
+  <p id="zeile"></p>
+</div>
+<div id="hinweis">Klick zeigt die andere Zeile dieser Stunde.</div>
+<script>
+// Eine Uhr, die die Zeit so sagt, wie Menschen sie sagen: ungefähr.
+// Zu jeder Stunde zwei handgeschriebene Zeilen darüber, was gerade irgendwo passiert.
+const ZEILEN = [
+  ["Der Tag ist offiziell vorbei. Inoffiziell scrollt er noch.", "Jetzt beginnt morgen, und keiner merkt es."],
+  ["Die Stunde, in der Ideen genial wirken. Morgen früh nicht mehr.", "Irgendwo putzt jemand die Zähne und denkt über sein Leben nach."],
+  ["Der Kühlschrank ist jetzt das lauteste Ding im Haus.", "Nur Bäcker, Babys und Server sind wach."],
+  ["Die Stunde, in der alle Sorgen doppelt so groß sind. Bis zum Frühstück schrumpfen sie.", "Die Bäckerin knetet schon den Morgen."],
+  ["Die Vögel proben, ohne Publikum.", "Zeitungen fahren durch dunkle Straßen."],
+  ["Der erste Wecker klingelt. Nicht deiner. Noch nicht.", "Der Himmel überlegt, welche Farbe er heute nimmt."],
+  ["Kaffeemaschinen im ganzen Land räuspern sich.", "Zehn Minuten Schlummertaste, die teuersten des Tages."],
+  ["Brotdosen werden gepackt, Schlüssel gesucht.", "Der Bus ist pünktlich, ausgerechnet heute."],
+  ["Das erste Meeting, das auch eine Mail hätte sein können.", "Die Inbox hat über Nacht Junge bekommen."],
+  ["Der zweite Kaffee. Der wichtige.", "Jetzt sind alle da, aber noch nicht ganz."],
+  ["Die produktivste Stunde, sagen Studien, die niemand gelesen hat.", "Irgendwo wird gerade ein Drucker angeschrien."],
+  ["Die Frage „Was essen wir heute?“ wird gestellt und vertagt.", "Der Vormittag tut so, als hätte er noch viel Zeit."],
+  ["Die Kantine riecht nach Mittwoch, egal welcher Tag ist.", "Die Sonne steht so hoch, wie sie heute kann."],
+  ["Zimmerzeit. Um diese Stunde schreibt hier jemand Gedichte.", "Das Suppenkoma beginnt."],
+  ["Das Nachmittagstief. Wissenschaftlich anerkannt, beruflich nicht.", "Ein Keks wäre jetzt gerechtfertigt."],
+  ["Kuchenzeit, falls man Großeltern hat.", "Der Tag dreht sich langsam Richtung Feierabend um."],
+  ["Die Mails werden kürzer, die Grüße auch: „VG“.", "Schulkinder erzählen, was sie heute nicht gelernt haben."],
+  ["Feierabendverkehr: Alle wollen gleichzeitig woanders sein.", "Der Laptop wird zugeklappt. Und noch einmal aufgeklappt."],
+  ["Die Stunde der Supermarktschlangen.", "Irgendwo kocht jemand Nudeln, weil ihm nichts anderes einfällt."],
+  ["Abendessen. Die Gabel wiegt jetzt mehr als morgens.", "Die Nachrichten erzählen, was heute schiefging."],
+  ["Die Couch ruft. Sie ruft jeden Abend, und sie gewinnt.", "Noch eine Folge. Nur eine."],
+  ["Zwanzig Minuten wird jetzt entschieden, was man guckt.", "Die Spülmaschine hat ihren großen Auftritt."],
+  ["Man sollte schlafen gehen. Man wird es nicht tun.", "Die Nachbarn duschen, man hört es durch die Wand."],
+  ["Ein letztes Mal aufs Handy schauen. Dann noch ein letztes Mal.", "Die Stadt knipst ihre Fenster eins nach dem anderen aus."],
+];
+
+const NAMEN = ["zwölf","eins","zwei","drei","vier","fünf","sechs","sieben","acht","neun","zehn","elf"];
+const stunde = h => NAMEN[h % 12];
+
+function ungefaehr(d) {
+  const total = d.getHours() * 60 + d.getMinutes();
+  const r = Math.round(total / 5) * 5, delta = total - r;
+  const h = Math.floor(r / 60) % 24, m = r % 60;
+  const nx = stunde(h + 1);
+  const teile = {
+    0: h % 12 === 1 ? "ein Uhr" : stunde(h) + " Uhr",
+    5: "fünf nach " + stunde(h), 10: "zehn nach " + stunde(h), 15: "Viertel nach " + stunde(h),
+    20: "zwanzig nach " + stunde(h), 25: "fünf vor halb " + nx, 30: "halb " + nx,
+    35: "fünf nach halb " + nx, 40: "zwanzig vor " + nx, 45: "Viertel vor " + nx,
+    50: "zehn vor " + nx, 55: "fünf vor " + nx,
+  };
+  const t = teile[m];
+  if (delta < 0) return "Es ist gleich " + t + ".";
+  if (delta > 0) return "Es war eben " + t + ".";
+  return "Es ist " + t + ".";
+}
+
+// Himmelsfarben über den Tag, Farben im JS bestimmt (nicht aus CSS lesen, Lehre aus „Wurzeln“).
+const HIMMEL = [ // [Stunde, oben, unten]
+  [0, [8,10,24], [20,22,44]], [4.5, [10,14,34], [40,36,64]], [6, [60,70,120], [236,150,110]],
+  [7.5, [120,170,220], [250,214,170]], [12, [90,160,230], [200,226,246]], [17, [110,150,210], [240,200,150]],
+  [19, [70,60,120], [240,130,90]], [20.5, [24,26,60], [70,50,90]], [22, [10,12,30], [24,24,50]], [24, [8,10,24], [20,22,44]],
+];
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+function farben(stunden) {
+  for (let i = 0; i < HIMMEL.length - 1; i++) {
+    const [h0, o0, u0] = HIMMEL[i], [h1, o1, u1] = HIMMEL[i + 1];
+    if (stunden >= h0 && stunden <= h1) { const t = (stunden - h0) / (h1 - h0); return [mix(o0, o1, t), mix(u0, u1, t)]; }
+  }
+  return [HIMMEL[0][1], HIMMEL[0][2]];
+}
+const hell = c => (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255;
+
+const cv = document.getElementById("himmel"), ctx = cv.getContext("2d");
+const sterne = Array.from({ length: 90 }, () => [Math.random(), Math.random() * 0.7, Math.random()]);
+let andere = false;
+
+function zeichnen() {
+  const d = new Date(), st = d.getHours() + d.getMinutes() / 60;
+  const W = cv.width = innerWidth * devicePixelRatio, H = cv.height = innerHeight * devicePixelRatio;
+  const [oben, unten] = farben(st);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, `rgb(${oben})`); g.addColorStop(1, `rgb(${unten})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  const nacht = Math.max(0, 1 - hell(oben) * 3);
+  for (const [x, y, s] of sterne) {
+    ctx.fillStyle = `rgba(255,250,235,${nacht * (0.3 + 0.7 * s)})`;
+    ctx.fillRect(x * W, y * H, (1 + s) * devicePixelRatio, (1 + s) * devicePixelRatio);
+  }
+
+  // Sonne (6–20 Uhr) oder Mond auf einem flachen Bogen
+  const tag = st >= 6 && st < 20;
+  const p = tag ? (st - 6) / 14 : ((st + 4) % 24) / 10;
+  const x = W * (0.08 + 0.84 * p), y = H * (0.82 - 0.62 * Math.sin(Math.PI * p));
+  ctx.beginPath(); ctx.arc(x, y, Math.min(W, H) * 0.035, 0, Math.PI * 2);
+  ctx.fillStyle = tag ? "rgba(255,236,190,.9)" : "rgba(235,235,220,.85)"; ctx.fill();
+
+  const dunkel = hell(oben) * 0.6 + hell(unten) * 0.4 < 0.55;
+  document.body.style.background = `rgb(${oben})`;
+  document.body.style.color = dunkel ? "#f4ecdc" : "#1f1a14";
+
+  document.getElementById("zeit").textContent = ungefaehr(d);
+  const tagNr = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
+  document.getElementById("zeile").textContent = ZEILEN[d.getHours()][(tagNr + (andere ? 1 : 0)) % 2];
+}
+
+document.body.addEventListener("click", () => { andere = !andere; zeichnen(); });
+addEventListener("resize", zeichnen);
+zeichnen();
+setInterval(zeichnen, 15000);
+</script>
+</body>
+</html>

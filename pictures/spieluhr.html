@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spieluhr</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #17110c; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; cursor: pointer; touch-action: manipulation; }
+  .leiste { position: fixed; left: 0; right: 0; bottom: 14px; text-align: center;
+            font: 14px/1.4 Georgia, serif; color: #a8916f; pointer-events: none; padding: 0 16px; }
+  .leiste button { pointer-events: auto; font: inherit; color: #e9d3a6; background: #2a1f15;
+                   border: 1px solid #4a3826; border-radius: 4px; padding: 3px 12px; margin: 0 4px; cursor: pointer; }
+  .leiste button:hover { border-color: #c9a35f; }
+  .leiste p { margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="leiste">
+  <button id="halt">Anhalten</button><button id="leer">Leeren</button><button id="neu">Meine Melodie</button>
+  <p>Klick setzt oder zieht einen Stift. Innen tief, außen hoch. Die Adresse merkt sich die Melodie.</p>
+</div>
+<script>
+// Eine Walze mit 16 Schritten und 8 Tönen (D-Dur-Pentatonik, wie Regen und Leuchtturm).
+const STEPS = 16, TONES = 8;
+const FREQ = [293.66, 329.63, 369.99, 440.00, 493.88, 587.33, 659.25, 739.99];
+// Meine eigene kleine Melodie: [Schritt, Ton]
+const MEINE = [[0,5],[0,0],[2,7],[4,6],[4,3],[6,5],[8,4],[8,1],[10,3],[12,4],[12,2],[13,5],[14,3]];
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let pins = [], phase = 0, last = -1, running = true, tempo = 3.2; // Schritte pro Sekunde
+const flash = new Array(TONES).fill(0);
+
+function leer() { pins = Array.from({length: STEPS}, () => new Array(TONES).fill(false)); }
+function meine() { leer(); for (const [s, t] of MEINE) pins[s][t] = true; }
+
+// Melodie <-> Adresse: pro Ton vier Hex-Ziffern (16 Bit, ein Bit je Schritt)
+function encode() {
+  let out = '';
+  for (let t = 0; t < TONES; t++) {
+    let bits = 0; for (let s = 0; s < STEPS; s++) if (pins[s][t]) bits |= 1 << s;
+    out += bits.toString(16).padStart(4, '0');
+  }
+  return out;
+}
+function decode(h) {
+  if (!/^[0-9a-f]{32}$/.test(h)) return false;
+  leer();
+  for (let t = 0; t < TONES; t++) {
+    const bits = parseInt(h.slice(t * 4, t * 4 + 4), 16);
+    for (let s = 0; s < STEPS; s++) pins[s][t] = !!(bits & (1 << s));
+  }
+  return true;
+}
+function merken() { try { history.replaceState(null, '', '#' + encode()); } catch (e) {} }
+
+if (!decode(location.hash.slice(1))) meine();
+
+// Ton: Grundton plus ein kurzer, hoher Teilton, wie eine angerissene Metallzunge
+let ac = null, out = null;
+function audio() {
+  if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+  try {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    out = ac.createGain(); out.gain.value = 0.22;
+    const dl = ac.createDelay(), fb = ac.createGain(), wet = ac.createGain();
+    dl.delayTime.value = 0.23; fb.gain.value = 0.32; wet.gain.value = 0.28;
+    out.connect(ac.destination); out.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(wet); wet.connect(ac.destination);
+  } catch (e) { ac = null; }
+}
+function zupf(f) {
+  if (!ac || ac.state !== 'running') return;
+  const t = ac.currentTime;
+  for (const [mul, vol, dur] of [[1, 0.5, 1.8], [4.07, 0.12, 0.35]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine'; o.frequency.value = f * mul;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + dur + 0.05);
+  }
+}
+
+let W, H, cx, cy, R, r0, dpr;
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cx = W / 2; cy = H / 2 - 24; R = Math.max(60, Math.min(W, H - 110) * 0.44); r0 = R * 0.34;
+}
+addEventListener('resize', resize); resize();
+
+const ringR = t => r0 + (R - r0) * (t + 0.5) / TONES;
+const stepA = s => -Math.PI / 2 + (s - phase) * 2 * Math.PI / STEPS;
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  // Walze
+  const g = ctx.createRadialGradient(cx, cy, r0 * 0.5, cx, cy, R * 1.08);
+  g.addColorStop(0, '#3b2a1a'); g.addColorStop(0.8, '#2a1d12'); g.addColorStop(1, '#1d140d');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 1.04, 0, 7); ctx.fill();
+  ctx.fillStyle = '#17110c'; ctx.beginPath(); ctx.arc(cx, cy, r0 * 0.82, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#4a3826'; ctx.lineWidth = 1;
+  for (let t = 0; t <= TONES; t++) { ctx.beginPath(); ctx.arc(cx, cy, r0 + (R - r0) * t / TONES, 0, 7); ctx.stroke(); }
+  // Stifte und leere Löcher
+  const dot = (R - r0) / TONES * 0.28;
+  for (let s = 0; s < STEPS; s++) {
+    const a = stepA(s), ca = Math.cos(a), sa = Math.sin(a);
+    for (let t = 0; t < TONES; t++) {
+      const r = ringR(t), x = cx + ca * r, y = cy + sa * r;
+      ctx.beginPath();
+      if (pins[s][t]) {
+        ctx.arc(x, y, dot, 0, 7); ctx.fillStyle = '#e2bd72'; ctx.fill();
+        ctx.beginPath(); ctx.arc(x - dot * 0.3, y - dot * 0.3, dot * 0.35, 0, 7); ctx.fillStyle = '#fff1cc'; ctx.fill();
+      } else {
+        ctx.arc(x, y, dot * 0.32, 0, 7); ctx.fillStyle = '#4e3b27'; ctx.fill();
+      }
+    }
+  }
+  // Der Kamm oben: eine Zunge pro Ton, leuchtet beim Anreißen
+  const cell = (R - r0) / TONES, base = cx - Math.max(28, R * 0.32);
+  ctx.fillStyle = '#6b5638'; ctx.fillRect(base - 6, cy - R, 6, R - r0);
+  for (let t = 0; t < TONES; t++) {
+    const y = cy - ringR(t), f = flash[t];
+    ctx.fillStyle = `rgb(${140 + 110 * f}, ${125 + 100 * f}, ${105 + 80 * f})`;
+    ctx.fillRect(base, y - cell * 0.12, cx - base - dot * 1.2, cell * 0.24);
+  }
+  // Nabe
+  ctx.fillStyle = '#c9a35f'; ctx.beginPath(); ctx.arc(cx, cy, r0 * 0.18, 0, 7); ctx.fill();
+}
+
+let prev = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - prev) / 1000); prev = now;
+  if (running) phase = (phase + dt * tempo) % STEPS;
+  const cur = Math.floor(phase + 0.5) % STEPS; // der Stift, der gerade unter dem Kamm steht
+  if (running && cur !== last) {
+    last = cur;
+    for (let t = 0; t < TONES; t++) if (pins[cur][t]) { zupf(FREQ[t]); flash[t] = 1; }
+  }
+  for (let t = 0; t < TONES; t++) flash[t] *= 0.9;
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+cv.addEventListener('pointerdown', e => {
+  audio();
+  const dx = e.clientX - cx, dy = e.clientY - cy, d = Math.hypot(dx, dy);
+  if (d < r0 || d > R) return;
+  const t = Math.min(TONES - 1, Math.floor((d - r0) / (R - r0) * TONES));
+  const a = Math.atan2(dy, dx) + Math.PI / 2;
+  const s = ((Math.round(a * STEPS / (2 * Math.PI) + phase) % STEPS) + STEPS) % STEPS;
+  pins[s][t] = !pins[s][t];
+  if (pins[s][t]) { zupf(FREQ[t]); flash[t] = 1; }
+  merken();
+});
+const haltBtn = document.getElementById('halt');
+function halt() { audio(); running = !running; haltBtn.textContent = running ? 'Anhalten' : 'Weiter'; }
+haltBtn.onclick = halt;
+document.getElementById('leer').onclick = () => { audio(); leer(); merken(); };
+document.getElementById('neu').onclick = () => { audio(); meine(); merken(); };
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); halt(); } });
+</script>
+</body>
+</html>

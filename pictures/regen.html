@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Regen auf Wasser</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0e1418; }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  #hinweis { position: fixed; left: 16px; bottom: 14px; font: 14px/1.4 Georgia, serif; opacity: .7;
+             pointer-events: none; transition: opacity 1.5s; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hinweis">Klick, um den Ton anzuschalten und Tropfen fallen zu lassen.</div>
+<script>
+// Farben im JS bestimmen (Lehre aus „Wurzeln“).
+const dunkel = matchMedia('(prefers-color-scheme: dark)').matches;
+const F = dunkel
+  ? { bg: '#0e1418', wasser: '#13202a', tropfen: '#cfe3ee', ring: [180, 215, 235], text: '#9fb4c0' }
+  : { bg: '#e9eef0', wasser: '#d6e1e6', tropfen: '#3c5a6b', ring: [50, 90, 110], text: '#4c6573' };
+document.body.style.background = F.bg;
+const hinweis = document.getElementById('hinweis');
+hinweis.style.color = F.text;
+
+const c = document.getElementById('c'), g = c.getContext('2d');
+let W, H, horizont;
+function groesse() {
+  const d = devicePixelRatio || 1;
+  W = c.clientWidth; H = c.clientHeight;
+  c.width = W * d; c.height = H * d; g.setTransform(d, 0, 0, d, 0, 0);
+  horizont = H * 0.42;
+}
+addEventListener('resize', groesse); groesse();
+
+// Pentatonik in D-Dur über zwei Oktaven: Weiter links = tiefer.
+const toene = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21].map(s => 146.83 * Math.pow(2, s / 12));
+let ac = null, hall = null;
+function tonAn() {
+  if (ac) return;
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  // Einfacher Hall: zwei verzögerte, gedämpfte Rückkopplungen.
+  hall = ac.createGain(); hall.gain.value = 0.9;
+  [0.23, 0.37].forEach(t => {
+    const d = ac.createDelay(1); d.delayTime.value = t;
+    const fb = ac.createGain(); fb.gain.value = 0.35;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+    hall.connect(d); d.connect(lp); lp.connect(fb); fb.connect(d); lp.connect(ac.destination);
+  });
+  hall.connect(ac.destination);
+}
+function plopp(x, staerke) {
+  if (!ac) return;
+  const i = Math.min(toene.length - 1, Math.floor(x / W * toene.length));
+  const f = toene[i], t = ac.currentTime;
+  const o = ac.createOscillator(), o2 = ac.createOscillator(), v = ac.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(f * 1.5, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.04);
+  o2.type = 'triangle'; o2.frequency.value = f * 2.01;
+  const v2 = ac.createGain(); v2.gain.value = 0.15;
+  v.gain.setValueAtTime(0, t);
+  v.gain.linearRampToValueAtTime(0.18 * staerke, t + 0.008);
+  v.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+  o.connect(v); o2.connect(v2); v2.connect(v); v.connect(hall);
+  o.start(t); o2.start(t); o.stop(t + 1.7); o2.stop(t + 1.7);
+}
+
+const tropfen = [], ringe = [];
+function neuerTropfen(x, ziel, staerke) {
+  tropfen.push({ x, y: -10, vy: 2 + Math.random() * 2, ziel, staerke });
+}
+c.addEventListener('pointerdown', e => {
+  tonAn(); hinweis.style.opacity = 0;
+  const r = c.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  neuerTropfen(x, Math.max(horizont + 10, y), 1);
+});
+
+// Von selbst regnet es leise, ab und zu.
+let naechster = 0;
+function wetter(t) {
+  if (t > naechster) {
+    const x = Math.random() * W;
+    neuerTropfen(x, horizont + 10 + Math.random() * (H - horizont - 20), 0.5 + Math.random() * 0.4);
+    naechster = t + 500 + Math.random() * 2200;
+  }
+}
+
+function zeichne(t) {
+  wetter(t);
+  g.fillStyle = F.bg; g.fillRect(0, 0, W, horizont);
+  g.fillStyle = F.wasser; g.fillRect(0, horizont, W, H - horizont);
+
+  g.strokeStyle = F.tropfen; g.lineWidth = 1.5; g.lineCap = 'round';
+  for (let i = tropfen.length - 1; i >= 0; i--) {
+    const d = tropfen[i];
+    d.vy += 0.35; d.y += d.vy;
+    g.beginPath(); g.moveTo(d.x, d.y - d.vy * 2.2); g.lineTo(d.x, d.y); g.stroke();
+    if (d.y >= d.ziel) {
+      tropfen.splice(i, 1);
+      ringe.push({ x: d.x, y: d.ziel, r: 1, a: 0.9 * d.staerke + 0.1 });
+      plopp(d.x, d.staerke);
+    }
+  }
+  // Ringe: Ellipsen, weil wir schräg aufs Wasser schauen. Je tiefer im Bild, desto näher und runder.
+  for (let i = ringe.length - 1; i >= 0; i--) {
+    const k = ringe[i];
+    k.r += 0.9; k.a *= 0.985;
+    if (k.a < 0.02) { ringe.splice(i, 1); continue; }
+    const nah = (k.y - horizont) / (H - horizont);
+    const [r, gg, b] = F.ring;
+    for (let j = 0; j < 3; j++) {
+      const rr = k.r - j * 9; if (rr <= 0) continue;
+      g.strokeStyle = `rgba(${r},${gg},${b},${k.a * (1 - j * 0.3)})`;
+      g.lineWidth = 1;
+      g.beginPath(); g.ellipse(k.x, k.y, rr * (0.6 + nah), rr * (0.15 + nah * 0.25), 0, 0, Math.PI * 2); g.stroke();
+    }
+  }
+  requestAnimationFrame(zeichne);
+}
+requestAnimationFrame(zeichne);
+</script>
+</body>
+</html>

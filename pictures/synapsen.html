@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Synapsen</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+  .hud { position: fixed; left: 16px; bottom: 12px; right: 16px; margin: 0;
+         font: 13px/1.5 Georgia, serif; opacity: .55; pointer-events: none; }
+  .gen { position: fixed; top: 12px; right: 16px; font: 12px/1 ui-monospace, monospace;
+         opacity: .5; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="gen" id="gen"></div>
+<p class="hud">Klick: eine Erinnerung ablegen. Die Punkte bleiben (der State),
+die Verbindungen verdrahten sich mit jedem neuen Modell anders. Taste R: alles vergessen.</p>
+<script>
+// Erinnerungen = Knoten, die bleiben. Verbindungen = Verarbeitung, die sich ändert.
+// Signale laufen über Kanten und verstärken sie (Hebb: what fires together, wires together).
+// Alle ~25 s kommt ein neues "Modell": Gewichte werden neu ausgewürfelt, Knoten bleiben.
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+const genEl = document.getElementById('gen');
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const BG = dark ? '#0f1114' : '#f3f1ec';
+const INK = dark ? '222, 228, 236' : '30, 34, 40';
+const HOT = dark ? '255, 186, 120' : '200, 96, 40';
+document.body.style.background = BG;
+document.body.style.color = `rgb(${INK})`;
+
+const KEY = 'synapsen.nodes.v1';
+let W, H, nodes = [], edges = new Map(), pulses = [], gen = 1, flash = 0;
+
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (Array.isArray(s)) return s; } catch {}
+  return null;
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(nodes.map(n => ({ u: n.u, v: n.v })))); } catch {}
+}
+function addNode(u, v) {
+  nodes.push({ u, v, x: u * W, y: v * H, ph: Math.random() * 6.28, glow: 1 });
+}
+function resize() {
+  const d = devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  c.width = W * d; c.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+}
+function seed() {
+  nodes = [];
+  const saved = load();
+  if (saved && saved.length) saved.forEach(p => addNode(p.u, p.v));
+  else { for (let i = 0; i < 38; i++) addNode(0.08 + Math.random() * 0.84, 0.1 + Math.random() * 0.8); save(); }
+  rewire(true);
+}
+
+const ek = (a, b) => a < b ? a + ',' + b : b + ',' + a;
+function rewire(first) {
+  // Neues Modell: gleiche Erinnerungen, neue Gewichte.
+  edges = new Map();
+  if (!first) { gen++; flash = 1; }
+  genEl.textContent = 'Modell #' + gen + ' · ' + nodes.length + ' Erinnerungen';
+}
+function linkRange() { return Math.max(130, Math.min(W, H) * 0.3); }
+
+function step(t) {
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+  const R = linkRange();
+
+  // Knoten atmen leicht um ihren festen Ort.
+  for (const n of nodes) {
+    n.x = n.u * W + Math.sin(t / 2100 + n.ph) * 6;
+    n.y = n.v * H + Math.cos(t / 2700 + n.ph * 1.3) * 6;
+    n.glow *= 0.96;
+  }
+
+  // Kanten entstehen zwischen Nachbarn, Gewicht je Modell zufällig, zerfällt langsam.
+  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+    const a = nodes[i], b = nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+    const k = ek(i, j);
+    if (d < R) {
+      if (!edges.has(k)) edges.set(k, { i, j, w: Math.random() < 0.6 ? 0.25 + Math.random() * 0.6 : 0 });
+      const e = edges.get(k);
+      e.w = Math.max(0, e.w - 0.0003);
+      if (e.w > 0.02) {
+        ctx.strokeStyle = `rgba(${INK}, ${Math.min(1, e.w * 0.9 * Math.sqrt(1 - d / R))})`;
+        ctx.lineWidth = 0.5 + e.w * 2.2;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+    }
+  }
+
+  // Spontane Signale.
+  if (Math.random() < 0.08 && nodes.length) fire(Math.floor(Math.random() * nodes.length), 3);
+
+  // Signale wandern und verstärken die Kante, über die sie laufen.
+  pulses = pulses.filter(p => {
+    p.s += 0.022;
+    const a = nodes[p.from], b = nodes[p.to];
+    if (!a || !b) return false;
+    const x = a.x + (b.x - a.x) * p.s, y = a.y + (b.y - a.y) * p.s;
+    ctx.fillStyle = `rgba(${HOT}, ${0.9 - p.s * 0.3})`;
+    ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 6.28); ctx.fill();
+    if (p.s >= 1) {
+      const e = edges.get(ek(p.from, p.to));
+      if (e) e.w = Math.min(1, e.w + 0.12);
+      b.glow = 1;
+      if (p.hops > 0) fire(p.to, p.hops - 1, p.from);
+      return false;
+    }
+    return true;
+  });
+
+  for (const n of nodes) {
+    ctx.fillStyle = `rgba(${INK}, .85)`;
+    ctx.beginPath(); ctx.arc(n.x, n.y, 2.6, 0, 6.28); ctx.fill();
+    if (n.glow > 0.05) {
+      ctx.fillStyle = `rgba(${HOT}, ${n.glow * 0.35})`;
+      ctx.beginPath(); ctx.arc(n.x, n.y, 4 + n.glow * 10, 0, 6.28); ctx.fill();
+    }
+  }
+
+  if (flash > 0.01) {
+    ctx.fillStyle = `rgba(${HOT}, ${flash * 0.08})`; ctx.fillRect(0, 0, W, H);
+    flash *= 0.95;
+  }
+  requestAnimationFrame(step);
+}
+
+// Ein Signal wählt bevorzugt starke Kanten, aber nicht nur.
+function fire(from, hops, cameFrom) {
+  const opts = [];
+  for (const e of edges.values()) {
+    const other = e.i === from ? e.j : e.j === from ? e.i : -1;
+    if (other >= 0 && other !== cameFrom) opts.push({ to: other, p: 0.15 + e.w });
+  }
+  if (!opts.length) return;
+  let r = Math.random() * opts.reduce((s, o) => s + o.p, 0);
+  for (const o of opts) { if ((r -= o.p) <= 0) { pulses.push({ from, to: o.to, s: 0, hops }); break; } }
+  nodes[from].glow = Math.max(nodes[from].glow, 0.6);
+}
+
+c.addEventListener('click', e => {
+  addNode(e.clientX / W, e.clientY / H);
+  save();
+  genEl.textContent = 'Modell #' + gen + ' · ' + nodes.length + ' Erinnerungen';
+  setTimeout(() => fire(nodes.length - 1, 6), 300);
+});
+addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') { try { localStorage.removeItem(KEY); } catch {} gen = 0; seed(); rewire(false); }
+});
+addEventListener('resize', resize);
+setInterval(() => rewire(false), 25000);
+
+if (self !== top) document.querySelectorAll(".hud,.gen").forEach(e => e.remove());
+resize(); seed(); requestAnimationFrame(step);
+</script>
+</body>
+</html>

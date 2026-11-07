@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leuchtturm</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #0b1220; overflow: hidden; }
+  body { font: 15px/1.4 Georgia, "Times New Roman", serif; color: #d8d2c4; }
+  canvas { display: block; width: 100%; height: 100%; cursor: pointer; touch-action: manipulation; }
+  #hud { position: fixed; left: 0; right: 0; top: 10px; text-align: center; pointer-events: none;
+         text-shadow: 0 1px 3px #000; }
+  #hud small { color: #8b93a3; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><span id="msg"></span><br><small id="sub"></small></div>
+<script>
+// Leuchtturm: Spiegel drehen, bis der Lichtstrahl jedes Boot erreicht.
+// Jede Karte wird erzeugt, indem ein Strahl erst einen Weg legt; dann werden die Spiegel verdreht.
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const msg = document.getElementById('msg'), sub = document.getElementById('sub');
+let N = 7, par = 0;
+let level = 1, moves = 0, won = false, grid, ships, lampRow, beam, t0 = performance.now();
+let W, H, cell, ox, oy, audio = null;
+
+function rnd(n) { return Math.floor(Math.random() * n); }
+function reflect(m, dr, dc) { return m === '/' ? [-dc, -dr] : [dc, dr]; }
+
+// Strahl verfolgen: liefert besuchte Zellen und Polylinie
+function trace() {
+  let r = lampRow, c = -1, dr = 0, dc = 1;
+  const pts = [[r, c]], seen = new Set();
+  for (let i = 0; i < 400; i++) {
+    r += dr; c += dc;
+    if (r < 0 || r >= N || c < 0 || c >= N) { pts.push([r, c]); break; }
+    seen.add(r * N + c);
+    const m = grid[r][c];
+    if (m) { [dr, dc] = reflect(m.o, dr, dc); pts.push([r, c]); }
+  }
+  return { pts, seen };
+}
+
+function generate() {
+  for (let tries = 0; tries < 500; tries++) {
+    grid = Array.from({ length: N }, () => Array(N).fill(null));
+    lampRow = rnd(N);
+    let r = lampRow, c = -1, dr = 0, dc = 1, path = [], mirrors = 0;
+    while (true) {
+      r += dr; c += dc;
+      if (r < 0 || r >= N || c < 0 || c >= N) break;
+      if (path.length > 60) break;
+      const m = grid[r][c];
+      if (m) { [dr, dc] = reflect(m.o, dr, dc); continue; }
+      const fresh = !path.includes(r * N + c);
+      if (fresh && path.length > 0 && Math.random() < 0.38) {
+        const o = Math.random() < .5 ? '/' : '\\';
+        grid[r][c] = { o, sol: o, rot: 0 };
+        mirrors++;
+        [dr, dc] = reflect(o, dr, dc);
+      }
+      path.push(r * N + c);
+    }
+    const empty = [...new Set(path)].filter(k => !grid[Math.floor(k / N)][k % N]);
+    const want = Math.min(2 + level, 4 + N - 7 + 2);
+    const needMirrors = Math.min(3 + level, N + 1) - (tries > 300 ? 2 : 0);
+    if (mirrors < needMirrors || empty.length < want + 2) continue;
+    // Boote auf dem Weg verteilen
+    ships = [];
+    const pool = empty.slice();
+    while (ships.length < want) ships.push(pool.splice(rnd(pool.length), 1)[0]);
+    // Lockspiegel abseits des Weges
+    const free = [];
+    for (let k = 0; k < N * N; k++) if (!path.includes(k)) free.push(k);
+    for (let i = 0; i < Math.min(1 + level, 6) && free.length; i++) {
+      const k = free.splice(rnd(free.length), 1)[0];
+      const o = Math.random() < .5 ? '/' : '\\';
+      grid[Math.floor(k / N)][k % N] = { o, sol: null, rot: 0 };
+    }
+    // gezielt verdrehen: genau `par` Spiegel auf dem Weg stehen falsch, so wächst die Schwierigkeit
+    // mit jeder Nacht statt vom Zufall abzuhängen. Lockspiegel stehen beliebig.
+    const onPath = [];
+    for (const row of grid) for (const m of row) if (m) {
+      if (m.sol) onPath.push(m); else if (Math.random() < .5) m.o = m.o === '/' ? '\\' : '/';
+    }
+    par = Math.min(1 + level, onPath.length);
+    onPath.sort(() => Math.random() - .5).slice(0, par).forEach(m => m.o = m.o === '/' ? '\\' : '/');
+    beam = trace();
+    if (!solved()) return;
+  }
+}
+
+function solved() { return ships.every(k => beam.seen.has(k)); }
+
+function newLevel() {
+  try { localStorage.setItem('leuchtturm-nacht', level); } catch (_) {}
+  N = level <= 5 ? 7 : level <= 10 ? 8 : 9;
+  generate(); resize(); beam = trace(); moves = 0; won = false; hud();
+}
+
+function hud() {
+  const lit = ships.filter(k => beam.seen.has(k)).length;
+  if (won) {
+    msg.textContent = `Alle Boote sehen das Licht. ${moves} ${moves === 1 ? 'Zug' : 'Züge'}` +
+      (moves <= par ? ', so gut wie der Wärter.' : ` (der Wärter brauchte ${par}).`);
+    sub.textContent = 'Klick für die nächste Nacht';
+  } else {
+    msg.textContent = `Nacht ${level} · ${lit} von ${ships.length} Booten im Licht`;
+    sub.textContent = `Spiegel anklicken zum Drehen · der Wärter schafft es in ${par}`;
+  }
+}
+
+function resize() {
+  const d = devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+  cell = Math.floor(Math.min((W - 40) / (N + 1.4), (H - 90) / N));
+  cell = Math.max(cell, 18);
+  ox = Math.round((W - cell * N) / 2 + cell * .55);
+  oy = Math.round((H - cell * N) / 2 + 22);
+}
+
+function cx(c) { return ox + (c + .5) * cell; }
+function cy(r) { return oy + (r + .5) * cell; }
+
+// Töne: kleine Glocken, D-Dur-Pentatonik wie beim Regen
+const notes = [293.66, 329.63, 369.99, 440, 493.88, 587.33, 659.25];
+function bell(f, when = 0, vol = .12) {
+  if (!audio) return;
+  const t = audio.currentTime + when, o = audio.createOscillator(), g = audio.createGain();
+  o.type = 'sine'; o.frequency.value = f;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .01);
+  g.gain.exponentialRampToValueAtTime(.0001, t + 1.6);
+  o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 1.7);
+}
+
+function drawBoat(x, y, s, lit, time) {
+  const bob = Math.sin(time / 600 + x) * s * .04;
+  ctx.save(); ctx.translate(x, y + bob);
+  if (lit) {
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, s * .6);
+    g.addColorStop(0, 'rgba(255,214,120,.35)'); g.addColorStop(1, 'rgba(255,214,120,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, s * .6, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = lit ? '#e9c27a' : '#3a4558';
+  ctx.beginPath(); // Rumpf
+  ctx.moveTo(-s * .3, s * .08); ctx.lineTo(s * .3, s * .08); ctx.lineTo(s * .2, s * .2); ctx.lineTo(-s * .2, s * .2);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = lit ? '#fbeedd' : '#4c5870';
+  ctx.beginPath(); // Segel
+  ctx.moveTo(-s * .02, s * .04); ctx.lineTo(-s * .02, -s * .28); ctx.lineTo(s * .2, s * .04); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function draw(time) {
+  ctx.fillStyle = '#0b1220'; ctx.fillRect(0, 0, W, H);
+  // Sterne
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 60; i++) {
+    const x = (i * 97.3) % W, y = (i * 53.7) % (H * .9);
+    ctx.globalAlpha = .15 + .15 * Math.sin(time / 900 + i); ctx.fillRect(x, y, 1.2, 1.2);
+  }
+  ctx.globalAlpha = 1;
+  // Wasserraster
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const lit = beam.seen.has(r * N + c);
+    ctx.fillStyle = lit ? 'rgba(80,110,150,.22)' : 'rgba(40,60,90,.18)';
+    ctx.fillRect(ox + c * cell + 1, oy + r * cell + 1, cell - 2, cell - 2);
+  }
+  // Leuchtturm
+  const lx = ox - cell * .55, ly = cy(lampRow);
+  ctx.fillStyle = '#c9c1b2';
+  ctx.beginPath(); ctx.moveTo(lx - cell * .16, ly + cell * .45); ctx.lineTo(lx + cell * .16, ly + cell * .45);
+  ctx.lineTo(lx + cell * .1, ly - cell * .1); ctx.lineTo(lx - cell * .1, ly - cell * .1); ctx.fill();
+  ctx.fillStyle = '#a3503a'; ctx.fillRect(lx - cell * .14, ly + cell * .15, cell * .28, cell * .08);
+  ctx.fillStyle = '#ffe2a0'; ctx.beginPath(); ctx.arc(lx, ly - cell * .02, cell * .09, 0, 7); ctx.fill();
+  // Strahl
+  const pulse = .75 + .25 * Math.sin(time / 400);
+  const p = beam.pts.map(([r, c]) => [r === lampRow && c === -1 ? lx : cx(c), cy(r)]);
+  const last = beam.pts[beam.pts.length - 1];
+  p[p.length - 1] = [cx(Math.max(-0.5, Math.min(N - .5, last[1]))), cy(Math.max(-0.5, Math.min(N - .5, last[0])))];
+  for (const [w, a] of [[cell * .28, .08], [cell * .12, .18], [2.2, .9]]) {
+    ctx.strokeStyle = `rgba(255,220,140,${a * pulse})`; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); p.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+  }
+  // Boote
+  for (const k of ships) drawBoat(cx(k % N), cy(Math.floor(k / N)), cell, beam.seen.has(k), time);
+  // Spiegel
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const m = grid[r][c]; if (!m) continue;
+    const target = m.o === '/' ? -Math.PI / 4 : Math.PI / 4;
+    m.rot += (target - m.rot) * .25;
+    ctx.save(); ctx.translate(cx(c), cy(r)); ctx.rotate(m.rot);
+    ctx.fillStyle = '#9fb3c8'; ctx.fillRect(-cell * .38, -cell * .045, cell * .76, cell * .09);
+    ctx.fillStyle = '#e8f1fa'; ctx.fillRect(-cell * .38, -cell * .045, cell * .76, cell * .03);
+    ctx.restore();
+  }
+  requestAnimationFrame(draw);
+}
+
+cv.addEventListener('pointerdown', e => {
+  if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} }
+  if (won) { level++; newLevel(); return; }
+  const c = Math.floor((e.clientX - ox) / cell), r = Math.floor((e.clientY - oy) / cell);
+  if (r < 0 || r >= N || c < 0 || c >= N || !grid[r][c]) return;
+  const before = ships.filter(k => beam.seen.has(k)).length;
+  const m = grid[r][c]; m.o = m.o === '/' ? '\\' : '/';
+  moves++; beam = trace();
+  const after = ships.filter(k => beam.seen.has(k)).length;
+  if (after > before) bell(notes[Math.min(after, notes.length - 1)]);
+  if (solved()) { won = true; [0, 2, 4, 6].forEach((n, i) => bell(notes[n], i * .12, .1)); }
+  hud();
+});
+
+addEventListener('resize', resize);
+try { level = Math.max(1, parseInt(localStorage.getItem('leuchtturm-nacht')) || 1); } catch (_) {}
+resize(); newLevel(); requestAnimationFrame(draw);
+</script>
+</body>
+</html>

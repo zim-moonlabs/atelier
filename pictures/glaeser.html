@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wassergläser</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #1d1714; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: pointer; }
+  #hint { position: fixed; left: 0; right: 0; bottom: 14px; text-align: center; color: #b9a58f;
+          font: 14px/1.4 Georgia, serif; pointer-events: none; padding: 0 16px; opacity: .85; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">Tippen lässt ein Glas klingen. Hoch- und runterziehen ändert das Wasser. Tasten 1–7.</div>
+<script>
+// Sieben Gläser auf einem Küchentisch. Mehr Wasser = tiefer.
+// Anfangs gestimmt auf D-Dur-Pentatonik, wie „Regen“ und „Leuchtturm“.
+const NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','H'];
+const midiF = m => 440 * Math.pow(2, (m - 69) / 12);
+const START = [62, 64, 66, 69, 71, 74, 76];            // D4 E4 F#4 A4 B4 D5 E5
+const FILL  = [0.72, 0.38, 0.58, 0.22, 0.62, 0.42, 0.26];
+const glasses = START.map((m, i) => ({
+  f0: midiF(m) * Math.pow(2, FILL[i]),                 // Klang des leeren Glases
+  fill: FILL[i], wobble: 0, phase: 0, voice: null, x: 0, w: 0, h: 0, base: 0
+}));
+const freq = g => g.f0 * Math.pow(2, -g.fill);         // eine Oktave Spielraum
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, dpr;
+function layout() {
+  dpr = window.devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const slot = Math.min(W / 7.6, 130), table = H * 0.72;
+  const maxF0 = Math.max(...glasses.map(g => g.f0));
+  glasses.forEach((g, i) => {
+    g.x = W / 2 + (i - 3) * slot;
+    const s = Math.pow(maxF0 / g.f0, 0.45);            // tiefe Gläser sind größer
+    g.w = slot * 0.5 * s; g.h = Math.min(H * 0.22, slot * 1.25) * s; g.base = table;
+  });
+}
+addEventListener('resize', layout); layout();
+
+// --- Ton -------------------------------------------------------------------
+let ac = null, master;
+function audio() {
+  if (!ac) {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain(); master.gain.value = 0.5;
+    const dl = ac.createDelay(), fb = ac.createGain(), lp = ac.createBiquadFilter();
+    dl.delayTime.value = 0.23; fb.gain.value = 0.28; lp.type = 'lowpass'; lp.frequency.value = 2200;
+    master.connect(ac.destination); master.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl);
+    lp.connect(ac.destination);
+  }
+  if (ac.state === 'suspended') ac.resume();
+  return ac;
+}
+// Glas: Grundton plus zwei unharmonische Obertöne, die schneller verklingen.
+const PARTS = [[1, 1, 3.2], [2.32, 0.22, 1.1], [4.25, 0.07, 0.45]];
+function strike(g, vel = 1) {
+  const a = audio(), t = a.currentTime, f = freq(g);
+  const oscs = PARTS.map(([r, amp, dec]) => {
+    const o = a.createOscillator(), v = a.createGain();
+    o.type = 'sine'; o.frequency.value = f * r;
+    v.gain.setValueAtTime(0, t);
+    v.gain.linearRampToValueAtTime(amp * 0.32 * vel, t + 0.004);
+    v.gain.exponentialRampToValueAtTime(0.0001, t + dec);
+    o.connect(v); v.connect(master); o.start(t); o.stop(t + dec + 0.05);
+    return { o, r };
+  });
+  g.voice = { oscs, until: t + 3.2 };
+  g.wobble = Math.min(1, g.wobble + 0.8 * vel);
+}
+function retune(g) {                                   // klingt es noch, gleitet der Ton mit
+  if (!g.voice || !ac || ac.currentTime > g.voice.until) return;
+  const f = freq(g), t = ac.currentTime;
+  g.voice.oscs.forEach(({ o, r }) => o.frequency.setTargetAtTime(f * r, t, 0.03));
+}
+
+// --- Bedienung ---------------------------------------------------------------
+function hit(x, y) {
+  for (const g of glasses)
+    if (Math.abs(x - g.x) < g.w * 0.6 && y > g.base - g.h - 30 && y < g.base + 10) return g;
+  return null;
+}
+let drag = null;
+cv.addEventListener('pointerdown', e => {
+  const g = hit(e.clientX, e.clientY); if (!g) return;
+  cv.setPointerCapture(e.pointerId);
+  drag = { g, y: e.clientY, fill: g.fill };
+  strike(g, 1);
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag) { cv.style.cursor = hit(e.clientX, e.clientY) ? 'pointer' : 'default'; return; }
+  const g = drag.g;
+  g.fill = Math.max(0, Math.min(1, drag.fill - (e.clientY - drag.y) / (g.h * 0.85)));
+  retune(g);
+});
+const end = () => { drag = null; };
+cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+addEventListener('keydown', e => {
+  const i = '1234567'.indexOf(e.key); if (i >= 0) strike(glasses[i], 0.9);
+});
+
+// --- Bild --------------------------------------------------------------------
+function noteOf(f) {
+  const m = 69 + 12 * Math.log2(f / 440), r = Math.round(m);
+  return { name: NAMES[(r % 12 + 12) % 12] + (Math.floor(r / 12) - 1), cents: Math.round((m - r) * 100) };
+}
+function glassPath(g) {
+  const top = g.base - g.h, bw = g.w * 0.42, tw = g.w * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(g.x - tw, top); ctx.lineTo(g.x - bw, g.base);
+  ctx.lineTo(g.x + bw, g.base); ctx.lineTo(g.x + tw, top);
+}
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  // Tisch und Lampenlicht
+  ctx.fillStyle = '#1d1714'; ctx.fillRect(0, 0, W, H);
+  const lamp = ctx.createRadialGradient(W / 2, H * 0.1, 10, W / 2, H * 0.4, Math.max(W, H) * 0.7);
+  lamp.addColorStop(0, 'rgba(255,214,150,0.20)'); lamp.addColorStop(1, 'rgba(255,214,150,0)');
+  ctx.fillStyle = lamp; ctx.fillRect(0, 0, W, H);
+  const tb = glasses[0].base;
+  ctx.fillStyle = '#3a2a20'; ctx.fillRect(0, tb, W, H - tb);
+  ctx.fillStyle = 'rgba(255,220,170,0.08)'; ctx.fillRect(0, tb, W, 2);
+
+  for (const g of glasses) {
+    g.phase += dt * 14; g.wobble *= Math.pow(0.25, dt);
+    const top = g.base - g.h, inner = g.h - 6, lvl = g.base - 3 - inner * g.fill * 0.92;
+    // Spiegelung auf dem Tisch
+    ctx.save(); ctx.globalAlpha = 0.12; ctx.translate(0, 2 * g.base); ctx.scale(1, -1);
+    glassPath(g); ctx.fillStyle = '#9fc4d8'; ctx.fill(); ctx.restore();
+    // Wasser
+    ctx.save(); glassPath(g); ctx.clip();
+    const amp = g.wobble * 4;
+    ctx.beginPath(); ctx.moveTo(g.x - g.w, g.base + 2);
+    for (let x = -g.w; x <= g.w; x += 3)
+      ctx.lineTo(g.x + x, lvl + Math.sin(x * 0.18 + g.phase) * amp);
+    ctx.lineTo(g.x + g.w, g.base + 2); ctx.closePath();
+    const wg = ctx.createLinearGradient(0, lvl, 0, g.base);
+    wg.addColorStop(0, 'rgba(140,195,225,0.55)'); wg.addColorStop(1, 'rgba(70,120,160,0.65)');
+    ctx.fillStyle = wg; ctx.fill(); ctx.restore();
+    // Glas
+    glassPath(g); ctx.strokeStyle = 'rgba(230,240,245,0.55)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(g.x, top, g.w * 0.5, 4, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(230,240,245,' + (0.4 + g.wobble * 0.5) + ')'; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(g.x - g.w * 0.3, top + 8); ctx.lineTo(g.x - g.w * 0.26, g.base - 10);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 3; ctx.stroke();
+    // Ton darunter
+    const n = noteOf(freq(g)), ok = Math.abs(n.cents) <= 8;
+    ctx.fillStyle = ok ? '#e8c98a' : '#8d7a66';
+    ctx.font = '15px Georgia, serif'; ctx.textAlign = 'center';
+    ctx.fillText(n.name, g.x, g.base + 28);
+    ctx.font = '11px Georgia, serif'; ctx.fillStyle = '#7a6a5a';
+    ctx.fillText(ok ? 'gestimmt' : (n.cents > 0 ? '+' : '') + n.cents + ' ct', g.x, g.base + 44);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

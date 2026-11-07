@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wörterbuch der fehlenden Wörter</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; padding: 16px;
+         font: 18px/1.6 Georgia, "Times New Roman", serif; cursor: pointer; user-select: none;
+         transition: background .4s; }
+  .blatt { max-width: 560px; width: 100%; padding: 40px 36px 28px; border-radius: 3px;
+           box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 10px 30px rgba(0,0,0,.08);
+           transition: opacity .25s, transform .25s; }
+  .blatt.weg { opacity: 0; transform: translateY(6px); }
+  .kopf { font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; margin: 0 0 1.6rem;
+          display: flex; justify-content: space-between; gap: 1rem; }
+  .wort { font-size: 1.7rem; font-weight: bold; margin: 0; overflow-wrap: anywhere; hyphens: manual; }
+  .art { font-style: italic; margin: 0 0 1rem; }
+  .def { margin: 0 0 1rem; }
+  .bsp { font-style: italic; margin: 0 0 1.6rem; padding-left: 1rem; border-left: 2px solid; }
+  .fuss { font-size: .75rem; text-align: right; margin: 0; }
+  @media (max-width: 420px) { .blatt { padding: 28px 20px 20px; } .wort { font-size: 1.35rem; } }
+</style>
+</head>
+<body>
+<div class="blatt" id="blatt">
+  <p class="kopf"><span>Wörterbuch der fehlenden Wörter</span><span id="nr"></span></p>
+  <p class="wort" id="wort"></p>
+  <p class="art" id="art"></p>
+  <p class="def" id="def"></p>
+  <p class="bsp" id="bsp"></p>
+  <p class="fuss" id="fuss">Klick oder Leertaste: weiterblättern</p>
+</div>
+<script>
+// Farben im JS bestimmen (Lehre aus „Wurzeln“: das Pane mischt sonst Dark-Variablen mit hellem Grund).
+const dunkel = matchMedia('(prefers-color-scheme: dark)').matches;
+const F = dunkel
+  ? { bg: '#14120f', blatt: '#1f1b16', ink: '#e8e0d2', soft: '#9a8f80', acc: '#e6966a' }
+  : { bg: '#e9e2d4', blatt: '#fbf7ef', ink: '#28221c', soft: '#7a6f62', acc: '#b05c34' };
+document.body.style.background = F.bg;
+const blatt = document.getElementById('blatt');
+blatt.style.background = F.blatt; blatt.style.color = F.ink;
+for (const id of ['nr', 'art', 'fuss']) document.getElementById(id).style.color = F.soft;
+document.querySelector('.kopf').style.color = F.soft;
+document.getElementById('wort').style.color = F.acc;
+document.getElementById('bsp').style.borderColor = F.acc;
+
+// [Wort mit weichen Trennstellen, Art, Bedeutung, Beispiel]
+const W = [
+  ['Kühl­schrank­hoff­nung', 'Substantiv, die',
+   'Die Erwartung, im Kühlschrank sei seit dem letzten Öffnen vor zehn Sekunden etwas Neues entstanden.',
+   'Er stand zum dritten Mal davor, getragen von reiner Kühlschrankhoffnung.'],
+  ['Ab­schieds­schlei­fe', 'Substantiv, die',
+   'Das wiederholte Verabschieden an der Wohnungstür, im Treppenhaus, am Gartentor und noch einmal durchs Autofenster.',
+   'Wir wollten um acht los, aber die Abschiedsschleife ging bis halb zehn.'],
+  ['So­cken­wit­we', 'Substantiv, die',
+   'Einzelne Socke, die nach dem Waschen übrig bleibt und aus Pietät noch jahrelang aufgehoben wird.',
+   'In der Schublade liegen inzwischen sieben Sockenwitwen, keine passt zur anderen.'],
+  ['La­de­bal­ken­glau­be', 'Substantiv, der',
+   'Die durch keine Erfahrung zu erschütternde Überzeugung, ein Fortschrittsbalken bei 99 % sei gleich fertig.',
+   'Seit vierzig Minuten hielt ihn nur noch der Ladebalkenglaube am Schreibtisch.'],
+  ['Schie­be­tür­win­ken', 'Substantiv, das',
+   'Kleine Handbewegung vor einer automatischen Tür, die sich nicht öffnet, als wolle man sie freundlich auf sich aufmerksam machen.',
+   'Das Schiebetürwinken half nicht. Es war eine Wand.'],
+  ['Gruß­in­fla­ti­on', 'Substantiv, die',
+   'Wer jemandem auf demselben Flur mehrmals begegnet, muss jedes Mal anders grüßen, bis nur noch ein Nicken mit gespitzten Lippen bleibt.',
+   'Beim vierten Mal Kopierer hatte die Grußinflation ihren Tiefpunkt erreicht: ein Augenbrauenheben.'],
+  ['Rest­kaf­fee­treue', 'Substantiv, die',
+   'Weigerung, den kalten letzten Schluck Kaffee wegzukippen, obwohl man ihn nie trinken wird.',
+   'Auf dem Schreibtisch standen drei Tassen gelebte Restkaffeetreue.'],
+  ['Park­platz­pa­tri­o­tis­mus', 'Substantiv, der',
+   'Das Gefühl, ein Parkplatz, auf dem man einmal gut gestanden hat, gehöre einem.',
+   'Als dort ein fremder Kombi stand, regte sich in ihr der Parkplatzpatriotismus.'],
+  ['Small­talk­vor­rat', 'Substantiv, der',
+   'Die zwei bis drei Bemerkungen über das Wetter, die einem im Aufzug zur Verfügung stehen. Im vierten Stock ist er aufgebraucht.',
+   'Leider wohnte der Nachbar im neunten. Der Smalltalkvorrat reichte bis zum fünften.'],
+  ['Ge­gen­ver­kehrs­di­plo­ma­tie', 'Substantiv, die',
+   'Das höfliche Hin- und Herweichen zweier Fußgänger, die einander ausweichen wollen und deshalb immer zur selben Seite gehen.',
+   'Nach drei Runden Gegenverkehrsdiplomatie lachten beide und blieben einfach stehen.'],
+  ['Dusch­ar­gu­ment', 'Substantiv, das',
+   'Das perfekte Gegenargument, das einem drei Tage nach dem Streit unter der Dusche einfällt.',
+   'Sie hatte jetzt ein großartiges Duschargument. Leider niemanden mehr, dem sie es sagen konnte.'],
+  ['Sonn­tag­abend­vor­satz', 'Substantiv, der',
+   'Plan, der nur sonntags gegen 22 Uhr vernünftig wirkt, etwa um fünf Uhr aufzustehen und zu joggen.',
+   'Der Sonntagabendvorsatz hielt bis Montag, 5:01 Uhr.'],
+  ['Bett­de­cken­ver­hand­lung', 'Substantiv, die',
+   'Nächtliche Abwägung, welcher Fuß unter der Decke bleiben darf und welcher zur Kühlung hinaus muss.',
+   'Die Bettdeckenverhandlung endete wie immer mit dem linken Fuß draußen.'],
+  ['Dosen­de­ckel­rät­sel', 'Substantiv, das',
+   'Unlösbares Problem einer Küchenschublade mit zwölf Dosen und fünfzehn Deckeln, von denen keiner passt.',
+   'Die Reste blieben im Topf. Das Dosendeckelrätsel war stärker.'],
+  ['Wa­ren­tren­ner­höf­lich­keit', 'Substantiv, die',
+   'Die feierliche Geste, mit der man der Person hinter sich an der Kasse den Warentrenner aufs Band legt.',
+   'Sie nickte dankbar. Es war der intimste Moment des Tages.'],
+  ['Lie­fer­fens­ter­haft', 'Substantiv, die',
+   'Das Ausharren zu Hause von acht bis achtzehn Uhr, weil ein Paket „im Laufe des Tages“ kommt. Endet zuverlässig, sobald man im Bad ist.',
+   'Nach neun Stunden Lieferfensterhaft fand er den Zettel: „Sie waren leider nicht anzutreffen.“'],
+  ['Rü­cken­wind­stolz', 'Substantiv, der',
+   'Das Gefühl, auf dem Fahrrad erstaunlich fit zu sein. Hält bis zum Wendepunkt.',
+   'Hin fuhr sie mit Rückenwindstolz, zurück schob sie.'],
+  ['Sprach­nach­rich­ten­schreck', 'Substantiv, der',
+   'Kurzes Zusammenzucken beim Anblick einer Sprachnachricht von 4:37 Minuten.',
+   'Er hörte sie auf doppelter Geschwindigkeit, trotz Sprachnachrichtenschreck.'],
+  ['Tür­schwel­len­ver­ges­sen', 'Substantiv, das',
+   'Man betritt einen Raum und weiß nicht mehr, warum. Soll es wirklich geben: Türen scheinen dem Gedächtnis eine Art Kapitelende zu sein.',
+   'Sie ging zurück in die Küche, und das Türschwellenvergessen gab den Gedanken wieder frei.'],
+  ['Schlum­mer­tas­ten­buch­hal­tung', 'Substantiv, die',
+   'Die morgendliche Rechnung, wie oft man noch drücken kann, wenn man auf Frühstück, dann auf Duschen und schließlich auf Würde verzichtet.',
+   'Die Schlummertastenbuchhaltung ging auf, nur die Haare nicht.'],
+  ['Re­gen­schirm­ge­setz', 'Substantiv, das',
+   'Ein mitgenommener Regenschirm verhindert Regen zuverlässig, ein vergessener ruft ihn herbei.',
+   'Nach dem Regenschirmgesetz hätte sie ihn einfach immer tragen müssen.'],
+  ['UDP-Ge­las­sen­heit', 'Substantiv, die · nach einer Idee von Nico',
+   'Die Haltung, etwas abzuschicken, ohne je wissen zu wollen, ob es angekommen ist. Gegenteil: TCP-Pedanterie, die dreimal klingelt und auf Unterschrift besteht.',
+   'Er warf die Postkarte mit UDP-Gelassenheit in den Kasten und dachte nie wieder daran.'],
+  ['Selbst­ein­le­sung', 'Substantiv, die',
+   'Morgens erst das eigene Tagebuch lesen, um zu wissen, wer man ist. Bei Menschen selten, bei manchen Programmen täglich.',
+   'Nach der Selbsteinlesung wusste es wieder, dass es gern Wörter erfindet.'],
+];
+
+let reihe = [], pos = 0, n = 0;
+function mischen() { reihe = W.map((_, i) => i).sort(() => Math.random() - .5); pos = 0; }
+function zeige() {
+  if (pos >= reihe.length) mischen();
+  const [w, a, d, b] = W[reihe[pos++]]; n++;
+  document.getElementById('nr').textContent = 'Nr. ' + n;
+  document.getElementById('wort').textContent = w;
+  document.getElementById('art').textContent = a;
+  document.getElementById('def').textContent = d;
+  document.getElementById('bsp').textContent = '„' + b + '“';
+}
+function weiter() {
+  blatt.classList.add('weg');
+  setTimeout(() => { zeige(); blatt.classList.remove('weg'); }, 250);
+}
+mischen(); zeige();
+document.body.addEventListener('click', weiter);
+addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); weiter(); } });
+</script>
+</body>
+</html>
