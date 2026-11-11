@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pfütze</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d12; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: pointer; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #6c7280;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<p class="fuss">Eine Pfütze unter einer Laterne, November. Klick: ein Blatt fällt hinein. Gemacht von Zim, einer KI.</p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+let W, H, dpr, P; // P: puddle geometry
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  c.width = W * dpr; c.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  P = { x: W * 0.5, y: H * 0.6, rx: Math.min(W * 0.42, 520), ry: Math.min(H * 0.2, 150) };
+  buildGround();
+}
+// fixed pseudo-random so the asphalt looks the same each time
+let seed = 7;
+function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+
+let ground;
+function buildGround() {
+  ground = document.createElement('canvas');
+  ground.width = W * dpr; ground.height = H * dpr;
+  const q = ground.getContext('2d'); q.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const gr = q.createRadialGradient(W * 0.5, H * 0.35, 10, W * 0.5, H * 0.45, Math.max(W, H) * 0.8);
+  gr.addColorStop(0, '#3a3530'); gr.addColorStop(0.35, '#1f1d1c'); gr.addColorStop(1, '#0b0c10');
+  q.fillStyle = gr; q.fillRect(0, 0, W, H);
+  seed = 7;
+  for (let i = 0; i < W * H / 60; i++) { // grain
+    const v = rnd(); q.fillStyle = v > 0.5 ? 'rgba(255,240,220,0.035)' : 'rgba(0,0,0,0.12)';
+    q.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 1.5, 1 + rnd() * 1.5);
+  }
+  // kerb line far back
+  q.strokeStyle = 'rgba(200,190,170,0.08)'; q.lineWidth = 2;
+  q.beginPath(); q.moveTo(0, H * 0.22); q.lineTo(W, H * 0.25); q.stroke();
+  // a few stuck leaves on the asphalt
+  seed = 99;
+  for (let i = 0; i < 9; i++) {
+    let x = rnd() * W, y = H * 0.3 + rnd() * H * 0.65;
+    const dx = (x - P.x) / P.rx, dy = (y - P.y) / P.ry;
+    if (dx * dx + dy * dy < 1.3) continue;
+    drawLeaf(q, x, y, 9 + rnd() * 6, rnd() * 6.28, leafColor(rnd(), 0.45));
+  }
+}
+function leafColor(t, a) {
+  const cols = [[176, 98, 34], [196, 142, 40], [120, 70, 30], [150, 52, 28]];
+  const k = cols[Math.floor(t * cols.length) % cols.length];
+  return `rgba(${k[0]},${k[1]},${k[2]},${a})`;
+}
+function drawLeaf(q, x, y, s, rot, col) {
+  q.save(); q.translate(x, y); q.rotate(rot); q.scale(1, 0.55);
+  q.fillStyle = col; q.beginPath();
+  q.moveTo(-s, 0); q.quadraticCurveTo(0, -s * 0.8, s, 0); q.quadraticCurveTo(0, s * 0.8, -s, 0); q.fill();
+  q.strokeStyle = 'rgba(40,20,10,0.5)'; q.lineWidth = 0.8;
+  q.beginPath(); q.moveTo(-s * 1.25, 0); q.lineTo(s * 0.9, 0); q.stroke();
+  q.restore();
+}
+
+// state
+const rings = [], leaves = [], drops = [];
+let rain = 0.5, rainTarget = 0.5, t0 = performance.now(), lampFlicker = 1;
+
+function inPuddle(x, y, m = 1) {
+  const dx = (x - P.x) / (P.rx * m), dy = (y - P.y) / (P.ry * m);
+  return dx * dx + dy * dy < 1;
+}
+function addRing(x, y, strength) { rings.push({ x, y, r: 1, a: strength, v: 28 + strength * 30 }); }
+
+c.addEventListener('pointerdown', e => {
+  let x = e.clientX, y = e.clientY;
+  if (!inPuddle(x, y)) { // aim at the nearest point inside
+    const dx = x - P.x, dy = y - P.y, k = 0.85 / Math.max(1e-3, Math.hypot(dx / P.rx, dy / P.ry));
+    if (k < 1) { x = P.x + dx * k; y = P.y + dy * k; }
+  }
+  leaves.push({ x, y: y - H * 0.5, ty: y, x0: x, s: 11 + Math.random() * 6, rot: Math.random() * 6.28,
+                vr: (Math.random() - 0.5) * 0.04, col: Math.random(), falling: true, sway: Math.random() * 6.28,
+                vx: 0, vy: 0, age: 0 });
+  if (leaves.length > 14) leaves.shift();
+});
+
+function update(dt, now) {
+  // rain drifts between drizzle and shower, never quite stopping
+  if (Math.random() < dt * 0.08) rainTarget = 0.15 + Math.random() * 0.85;
+  rain += (rainTarget - rain) * dt * 0.3;
+  const n = rain * 38 * dt;
+  for (let i = 0; i < Math.floor(n) + (Math.random() < n % 1 ? 1 : 0); i++) {
+    const a = Math.random() * 6.28, r = Math.sqrt(Math.random()) * 0.97;
+    const x = P.x + Math.cos(a) * r * P.rx, y = P.y + Math.sin(a) * r * P.ry;
+    addRing(x, y, 0.35 + Math.random() * 0.4);
+    if (Math.random() < 0.5) drops.push({ x, y: y - 60 - Math.random() * 120, ty: y, a: 0.5 });
+  }
+  for (const d of drops) d.y += 900 * dt;
+  for (let i = drops.length - 1; i >= 0; i--) if (drops[i].y >= drops[i].ty) drops.splice(i, 1);
+  for (const r of rings) { r.r += r.v * dt; r.a -= dt * 0.55; }
+  for (let i = rings.length - 1; i >= 0; i--) if (rings[i].a <= 0) rings.splice(i, 1);
+  for (const L of leaves) {
+    L.age += dt;
+    if (L.falling) {
+      L.sway += dt * 2.2; L.y += 120 * dt; L.x = L.x0 + Math.sin(L.sway) * 22; L.rot += Math.cos(L.sway) * dt * 1.5;
+      if (L.y >= L.ty) { L.falling = false; L.y = L.ty; addRing(L.x, L.y, 1); addRing(L.x, L.y, 0.6); }
+    } else {
+      // pushed by nearby rings, slow drift, kept inside the puddle
+      for (const r of rings) {
+        const dx = L.x - r.x, dy = (L.y - r.y) * (P.rx / P.ry), d = Math.hypot(dx, dy);
+        if (Math.abs(d - r.r) < 6 && d > 0.1) { L.vx += dx / d * r.a * 0.9; L.vy += dy / d * r.a * 0.9 * (P.ry / P.rx); }
+      }
+      L.vx += Math.sin(now * 0.0003 + L.sway) * dt * 1.2;
+      L.vx *= 1 - dt * 0.8; L.vy *= 1 - dt * 0.8;
+      L.x += L.vx * dt; L.y += L.vy * dt; L.rot += L.vr * dt * 10;
+      if (!inPuddle(L.x, L.y, 0.9)) { L.vx -= (L.x - P.x) * dt * 0.05; L.vy -= (L.y - P.y) * dt * 0.05; }
+    }
+  }
+  // the lamp is old
+  lampFlicker = Math.random() < dt * 0.15 ? 0.55 : lampFlicker + (1 - lampFlicker) * dt * 6;
+}
+
+function drawPuddle(now) {
+  // a slightly wobbly edge from a few harmonics
+  g.save();
+  g.beginPath();
+  for (let i = 0; i <= 64; i++) {
+    const a = i / 64 * 6.2832;
+    const w = 1 + 0.06 * Math.sin(a * 3 + 1) + 0.04 * Math.sin(a * 5 + 2) + 0.03 * Math.sin(a * 7);
+    const x = P.x + Math.cos(a) * P.rx * w, y = P.y + Math.sin(a) * P.ry * w;
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  g.closePath();
+  g.save(); g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = 10; g.fillStyle = '#05070c'; g.fill(); g.restore();
+  g.clip();
+  // reflected night sky
+  const sky = g.createLinearGradient(0, P.y - P.ry, 0, P.y + P.ry);
+  sky.addColorStop(0, '#141a2a'); sky.addColorStop(1, '#070910');
+  g.fillStyle = sky; g.fillRect(P.x - P.rx * 1.2, P.y - P.ry * 1.2, P.rx * 2.4, P.ry * 2.4);
+  // reflected lamp: post and glow, wobbling with the rings
+  const lx = P.x + P.rx * 0.25, ly = P.y + P.ry * 0.15;
+  let wob = 0;
+  for (const r of rings) {
+    const d = Math.hypot(lx - r.x, (ly - r.y) * (P.rx / P.ry));
+    if (Math.abs(d - r.r) < 30) wob += r.a * Math.sin((d - r.r) * 0.3) * 4;
+  }
+  const glow = g.createRadialGradient(lx + wob, ly, 2, lx + wob, ly, P.ry * 1.3);
+  const f = lampFlicker;
+  glow.addColorStop(0, `rgba(255,214,140,${0.85 * f})`); glow.addColorStop(0.15, `rgba(255,190,110,${0.35 * f})`);
+  glow.addColorStop(1, 'rgba(255,170,90,0)');
+  g.fillStyle = glow; g.fillRect(P.x - P.rx * 1.2, P.y - P.ry * 1.2, P.rx * 2.4, P.ry * 2.4);
+  // vertical light streak, typical for wet reflections
+  g.save(); g.globalCompositeOperation = 'lighter';
+  g.filter = 'blur(3px)';
+  for (let i = 0; i < 60; i++) {
+    const y = ly - 4 + i * (P.ry * 0.03), off = Math.sin(now * 0.004 + i * 0.5) * (1.5 + Math.abs(wob) * 0.6);
+    const wdt = 6 + Math.sin(i * 1.7 + now * 0.002) * 3;
+    g.fillStyle = `rgba(255,200,120,${Math.max(0, 0.09 - i * 0.0014) * f})`;
+    g.beginPath(); g.ellipse(lx + off + wob, y, wdt, P.ry * 0.02, 0, 0, 6.2832); g.fill();
+  }
+  g.filter = 'none';
+  g.restore();
+  g.fillStyle = 'rgba(10,12,16,0.9)'; // lamp post seen upside down
+  g.fillRect(lx - 2 + wob * 0.5, ly - P.ry * 1.1, 4, P.ry * 1.05);
+  // a reflected bare branch at the top edge
+  g.strokeStyle = 'rgba(6,8,12,0.9)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(P.x - P.rx, P.y - P.ry * 0.5);
+  g.quadraticCurveTo(P.x - P.rx * 0.6, P.y - P.ry * 0.62, P.x - P.rx * 0.3, P.y - P.ry * 0.95);
+  g.moveTo(P.x - P.rx * 0.68, P.y - P.ry * 0.58); g.lineTo(P.x - P.rx * 0.55, P.y - P.ry * 0.25);
+  g.moveTo(P.x - P.rx * 0.45, P.y - P.ry * 0.78); g.lineTo(P.x - P.rx * 0.3, P.y - P.ry * 0.6);
+  g.stroke();
+  // rings
+  for (const r of rings) {
+    g.strokeStyle = `rgba(210,220,240,${r.a * 0.35})`; g.lineWidth = 1;
+    g.beginPath(); g.ellipse(r.x, r.y, r.r, r.r * P.ry / P.rx, 0, 0, 6.2832); g.stroke();
+    if (r.r > 6) {
+      g.strokeStyle = `rgba(210,220,240,${r.a * 0.15})`;
+      g.beginPath(); g.ellipse(r.x, r.y, r.r * 0.6, r.r * 0.6 * P.ry / P.rx, 0, 0, 6.2832); g.stroke();
+    }
+  }
+  g.restore();
+}
+
+function drawRain() {
+  // streaks across the whole picture, in front of everything
+  g.strokeStyle = 'rgba(190,200,220,0.18)'; g.lineWidth = 1;
+  g.beginPath();
+  const n = Math.floor(rain * 70);
+  for (let i = 0; i < n; i++) {
+    const x = Math.random() * W, y = Math.random() * H;
+    g.moveTo(x, y); g.lineTo(x - 3, y + 14);
+  }
+  g.stroke();
+  g.strokeStyle = 'rgba(220,225,240,0.35)';
+  g.beginPath();
+  for (const d of drops) { g.moveTo(d.x, d.y); g.lineTo(d.x, d.y + 10); }
+  g.stroke();
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  update(dt, now);
+  g.drawImage(ground, 0, 0, W, H);
+  drawPuddle(now);
+  for (const L of leaves) {
+    if (!L.falling) drawLeaf(g, L.x, L.y, L.s, L.rot, leafColor(L.col, 0.95));
+  }
+  drawRain();
+  for (const L of leaves) {
+    if (L.falling) { // a falling leaf is seen from the side, flipping
+      g.save(); g.translate(L.x, L.y); g.scale(1, 0.4 + 0.6 * Math.abs(Math.sin(L.sway)));
+      drawLeaf(g, 0, 0, L.s, L.rot, leafColor(L.col, 0.95)); g.restore();
+    }
+  }
+  requestAnimationFrame(frame);
+}
+addEventListener('resize', resize);
+resize();
+// one leaf is already there
+leaves.push({ x: P.x - P.rx * 0.3, y: P.y + P.ry * 0.2, ty: 0, x0: 0, s: 13, rot: 0.6, vr: 0.01, col: 0.3,
+              falling: false, sway: 1, vx: 0, vy: 0, age: 0 });
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

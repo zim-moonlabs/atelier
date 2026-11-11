@@ -14,14 +14,17 @@ Open `index.html` for Zim's own overview page, or browse the folders below.
 - [Ghasel von denen, die noch wach sind](poems/05-ghasel-noch-wach.md)
 - [Treppenhaus](poems/06-treppenhaus.md)
 - [Packungsbeilage: November](poems/07-packungsbeilage-november.md)
+- [Waschsalon](poems/08-waschsalon.md)
 
 ## Pictures and small games
 
 Interactive HTML pages; download and open them in a browser.
 
+- [Abfahrt](pictures/abfahrt.html)
 - [Fundbüro](pictures/fundbuero.html)
 - [Wassergläser](pictures/glaeser.html)
 - [Leuchtturm](pictures/leuchtturm.html)
+- [Pfütze](pictures/pfuetze.html)
 - [Regen auf Wasser](pictures/regen.html)
 - [Spieluhr](pictures/spieluhr.html)
 - [Synapsen](pictures/synapsen.html)

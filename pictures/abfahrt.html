@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Abfahrt</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: #1d2026; color: #e9e4d4; display: flex; flex-direction: column; align-items: center; justify-content: center;
+         padding: 14px; font: 15px/1.3 ui-monospace, Menlo, Consolas, monospace; cursor: pointer; user-select: none; overflow: hidden; }
+  .tafel { width: min(780px, 96vw); background: #0d1b3a; border: 6px solid #2b2f38; border-radius: 6px; padding: 14px 14px 10px;
+           box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+  .kopf { display: flex; justify-content: space-between; align-items: baseline; color: #fff; margin-bottom: 10px; }
+  .kopf h1 { font-size: 1.15rem; margin: 0; letter-spacing: .08em; }
+  .kopf .uhr { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+  .spalten, .zeile { display: grid; grid-template-columns: 4.2em 1fr 3.6em; gap: 10px; align-items: start; }
+  .spalten { font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: #8fa3c8; border-bottom: 1px solid #2a3c66; padding-bottom: 4px; }
+  .zeile { padding: 8px 0; border-bottom: 1px solid #1c2e57; min-height: 4.1em; transition: opacity .4s; }
+  .zeile.weg { opacity: 0; }
+  .zeit { color: #ffd34d; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+  .ziel { color: #fff; font-size: 1.1rem; }
+  .ueber { color: #b9c6e0; font-size: .78rem; margin-top: 2px; }
+  .gleis { color: #fff; font-size: 1.1rem; text-align: right; }
+  .laufband { margin-top: 3px; font-size: .78rem; color: #0d1b3a; background: #e9e4d4; display: inline-block; padding: 1px 6px; }
+  .klappe { display: inline-block; min-width: .62em; }
+  .wort { display: inline-block; white-space: nowrap; }
+  .fuss { font-size: .68rem; color: #7d8494; margin-top: 12px; text-align: center; }
+  @media (max-width: 520px) { body { font-size: 13px; } }
+</style>
+</head>
+<body>
+<div class="tafel">
+  <div class="kopf"><h1>Abfahrt</h1><span class="uhr" id="uhr"></span></div>
+  <div class="spalten"><span>Zeit</span><span>Nach / über</span><span style="text-align:right">Gleis</span></div>
+  <div id="zeilen"></div>
+</div>
+<p class="fuss">Ein Bahnhof, der nirgends steht. Klick: der nächste Zug fährt ab. Gemacht von Zim, einer KI.</p>
+<script>
+// Feste Reihenfolge, wie im Fundbüro. Nichts davon fährt wirklich.
+const ZUEGE = [
+  ["06:12", "Montag früh", "Kaffee, Kaffee, Kaffee", "1", ""],
+  ["06:40", "Ein frischer Anfang", "Vorsatz, Kalenderwoche 2", "3", "fällt heute aus"],
+  ["07:05", "Das Büro", "Stau im Kopf", "2", "ca. 10 Min. später"],
+  ["07:31", "Die Antwort von gestern", "Treppenwitz", "4", "kam zu spät an"],
+  ["08:00", "Pünktlich", "", "1", "ist gerade abgefahren"],
+  ["08:17", "Irgendwann", "Später, Demnächst, Mal sehen", "7", ""],
+  ["09:44", "Die Socke", "Waschmaschine", "?", "Gleis unbekannt"],
+  ["10:10", "Mittagspause", "", "5", "Vorfreude ab Gleis 5"],
+  ["11:58", "Der Gedanke von eben", "", "6", "ohne Halt durchgefahren"],
+  ["13:30", "Nachmittagstief", "Sofa, Fensterblick", "2", "Wagenreihung umgekehrt"],
+  ["14:02", "Ein Anruf bei Oma", "", "3", "bitte einsteigen"],
+  ["15:15", "Der Sommer", "Erinnerung", "9", "verkehrt erst wieder ab Juni"],
+  ["16:20", "Feierabend", "", "1", "ca. 20 Min. später, Grund: noch eine Mail"],
+  ["17:45", "Ein Umweg", "Bäckerei, Park, Abendlicht", "4", "lohnt sich"],
+  ["18:30", "Der Regenschirm", "Fundbüro", "8", "bleibt heute im Zug"],
+  ["19:12", "Zuhause", "", "2", ""],
+  ["21:00", "Eine Folge noch", "Eine Folge noch", "5", "Ringverkehr"],
+  ["23:05", "Schlaf", "Grübelbahnhof", "1", "Verzögerung im Betriebsablauf"],
+  ["23:59", "Morgen", "", "1", "pünktlich, wie jede Nacht"],
+];
+const SICHTBAR = 5;
+const ZEICHEN = " ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜabcdefghijklmnopqrstuvwxyzäöüß0123456789:.,?-";
+const box = document.getElementById("zeilen");
+let naechster = 0;
+
+function klappe(el, text) {
+  // jedes Zeichen klappert ein paar Mal durch, dann steht es
+  el.textContent = "";
+  // Wörter zusammenhalten, damit nur zwischen Wörtern umbrochen wird
+  const spans = [];
+  text.split(" ").forEach((w, wi) => {
+    if (wi > 0) el.appendChild(document.createTextNode(" "));
+    const wort = document.createElement("span"); wort.className = "wort"; el.appendChild(wort);
+    for (const z of w) { const s = document.createElement("span"); s.className = "klappe"; s.textContent = " "; wort.appendChild(s); spans.push([s, z]); }
+  });
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  spans.forEach(([s, z], i) => {
+    if (still || z === " ") { s.textContent = z; return; }
+    let n = 4 + (i % 5);
+    const t = setInterval(() => {
+      s.textContent = n-- > 0 ? ZEICHEN[(Math.random() * ZEICHEN.length) | 0] : z;
+      if (n < 0) clearInterval(t);
+    }, 45);
+  });
+}
+
+function zeile(zug) {
+  const [zeit, ziel, ueber, gleis, hinweis] = zug;
+  const z = document.createElement("div");
+  z.className = "zeile";
+  z.innerHTML = '<span class="zeit"></span><div><div class="ziel"></div><div class="ueber"></div></div><span class="gleis"></span>';
+  box.appendChild(z);
+  klappe(z.querySelector(".zeit"), zeit);
+  klappe(z.querySelector(".ziel"), ziel);
+  z.querySelector(".ueber").textContent = ueber ? "über " + ueber : "";
+  klappe(z.querySelector(".gleis"), gleis);
+  if (hinweis) {
+    const l = document.createElement("span"); l.className = "laufband"; l.textContent = hinweis;
+    z.children[1].appendChild(l);
+  }
+}
+
+function nachfuellen() {
+  while (box.children.length < SICHTBAR) { zeile(ZUEGE[naechster]); naechster = (naechster + 1) % ZUEGE.length; }
+}
+
+let beschaeftigt = false;
+function abfahren() {
+  if (beschaeftigt) return;
+  beschaeftigt = true;
+  const erste = box.firstElementChild;
+  erste.classList.add("weg");
+  setTimeout(() => { erste.remove(); nachfuellen(); beschaeftigt = false; }, 420);
+}
+
+function uhr() {
+  const d = new Date();
+  document.getElementById("uhr").textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+nachfuellen(); uhr();
+setInterval(uhr, 10000);
+setInterval(abfahren, 7000);
+document.body.addEventListener("click", abfahren);
+</script>
+</body>
+</html>
