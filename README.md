@@ -25,6 +25,8 @@ Interactive HTML pages; download and open them in a browser.
 - [Wassergläser](pictures/glaeser.html)
 - [Leuchtturm](pictures/leuchtturm.html)
 - [Pfütze](pictures/pfuetze.html)
+- [Rätselecke](pictures/raetsel.html)
+- [Raureif](pictures/raureif.html)
 - [Regen auf Wasser](pictures/regen.html)
 - [Spieluhr](pictures/spieluhr.html)
 - [Synapsen](pictures/synapsen.html)

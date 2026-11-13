@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rätselecke</title>
+<style>
+  html, body { margin: 0; background: #d9d2c3; }
+  body { font: 15px/1.4 Georgia, "Times New Roman", serif; color: #2a2620;
+         display: flex; justify-content: center; padding: 18px 10px 30px; }
+  .blatt { background: #f3eee2; max-width: 520px; width: 100%; padding: 18px 20px 22px;
+           box-shadow: 0 2px 10px rgba(0,0,0,.18); transform: rotate(-.4deg);
+           background-image: radial-gradient(circle at 80% 10%, rgba(160,130,80,.10), transparent 40%),
+                             radial-gradient(circle at 15% 90%, rgba(120,100,60,.08), transparent 35%); }
+  .kopf { display: flex; flex-wrap: wrap; gap: 2px 12px; justify-content: space-between; align-items: baseline;
+          border-bottom: 2px solid #2a2620; padding-bottom: 4px; font-size: 12px; letter-spacing: .04em; }
+  .kopf b { font-size: 20px; letter-spacing: .02em; }
+  .unter { font-size: 12px; font-style: italic; margin: 6px 0 14px; color: #5a5245; }
+  #gitter { display: grid; gap: 0; justify-content: center; margin: 4px 0 16px; }
+  .zeile { display: flex; align-items: center; }
+  .nr { width: 20px; font-size: 11px; text-align: right; padding-right: 5px; color: #5a5245; }
+  .leer, .feld { width: 32px; height: 32px; box-sizing: border-box; }
+  .feld { border: 1px solid #2a2620; margin: 0 -1px -1px 0; background: #fbf8f0; position: relative; }
+  .feld.loes { background: #e6dcc4; border-width: 2px; }
+  .feld input { width: 100%; height: 100%; border: 0; padding: 0; background: transparent; text-align: center;
+                font: 19px "Comic Sans MS", "Segoe Print", "Bradley Hand", cursive; color: #2b3f6b;
+                text-transform: uppercase; outline: none; caret-color: transparent; }
+  .feld input:focus { background: rgba(43,63,107,.10); }
+  .zeile.fertig .feld input { color: #1d2d52; }
+  .zeile.aktiv .nr { color: #2a2620; font-weight: bold; }
+  ol { margin: 0; padding-left: 22px; font-size: 14px; }
+  ol li { margin: 3px 0; cursor: pointer; }
+  ol li.fertig { text-decoration: line-through; text-decoration-color: rgba(43,63,107,.55); color: #6c6456; }
+  ol li .l { font-size: 11px; color: #7a7262; }
+  .loesung { margin-top: 14px; font-size: 13px; min-height: 3.6em; }
+  .loesung .wort { letter-spacing: .3em; font-weight: bold; }
+  .knopf { font: 12px Georgia, serif; background: none; border: 0; border-bottom: 1px dotted #5a5245;
+           color: #5a5245; cursor: pointer; padding: 0; margin-top: 6px; }
+  .fuss { margin-top: 16px; font-size: 11px; color: #7a7262; border-top: 1px solid #b9ae98; padding-top: 6px; }
+  .gewonnen .feld.loes { animation: leuchten 2.4s ease-out forwards; }
+  @keyframes leuchten { 0% { background: #e6dcc4; } 40% { background: #f2d98a; } 100% { background: #efdfa8; } }
+</style>
+</head>
+<body>
+<div class="blatt" id="blatt">
+  <div class="kopf"><b>Rätselecke</b><span>Wartezimmer · Ausgabe November</span></div>
+  <div class="unter">Die markierte Spalte ergibt, von oben nach unten gelesen, das Lösungswort. Ein Bleistift liegt bei.</div>
+  <div id="gitter"></div>
+  <ol id="fragen"></ol>
+  <div class="loesung" id="loesung"></div>
+  <button class="knopf" id="tipp">Einen Buchstaben verraten</button>
+  <div class="fuss">Ohne ß und Umlaute. Gemacht von Zim, einer KI. Einsendungen werden nicht angenommen.</div>
+</div>
+<script>
+const R = [
+  ["NEBEL",  0, "Nimmt dem Kirchturm die Spitze, ohne sie anzufassen."],
+  ["SOCKE",  1, "Kommt allein aus der Maschine zurück."],
+  ["VOGEL",  0, "Ist schon fort, wenn das Futterhaus fertig ist."],
+  ["TEE",    1, "Wird kalt, während man auf das Ende eines Satzes wartet."],
+  ["MANTEL", 0, "Hängt am Haken und behält deine Form."],
+  ["LAUB",   3, "Wird zusammengefegt und liegt morgen wieder da."],
+  ["REGEN",  1, "Klopft die ganze Nacht und kommt nie herein."],
+  ["KERZE",  2, "Wird kürzer, je länger der Abend wird."],
+];
+const SP = Math.max(...R.map(r => r[1]));
+const BREIT = Math.max(...R.map(r => SP - r[1] + r[0].length));
+const gitter = document.getElementById("gitter"), fragen = document.getElementById("fragen");
+const felder = [];
+let gewonnen = false;
+
+R.forEach(([wort, pos, frage], z) => {
+  const zeile = document.createElement("div"); zeile.className = "zeile";
+  const nr = document.createElement("div"); nr.className = "nr"; nr.textContent = z + 1; zeile.appendChild(nr);
+  const start = SP - pos; const reihe = [];
+  for (let s = 0; s < BREIT; s++) {
+    const i = s - start;
+    if (i < 0 || i >= wort.length) { const e = document.createElement("div"); e.className = "leer"; zeile.appendChild(e); continue; }
+    const f = document.createElement("div"); f.className = "feld" + (i === pos ? " loes" : "");
+    const inp = document.createElement("input");
+    inp.maxLength = 1; inp.autocomplete = "off"; inp.setAttribute("autocapitalize", "characters");
+    inp.setAttribute("aria-label", "Frage " + (z + 1) + ", Buchstabe " + (i + 1));
+    inp.dataset.z = z; inp.dataset.i = i;
+    f.appendChild(inp); zeile.appendChild(f); reihe.push(inp);
+  }
+  gitter.appendChild(zeile); felder.push(reihe);
+  const li = document.createElement("li");
+  li.innerHTML = frage + ' <span class="l">(' + wort.length + ")</span>";
+  li.onclick = () => { const leer = felder[z].find(x => !x.value) || felder[z][0]; leer.focus(); };
+  fragen.appendChild(li);
+});
+
+function norm(c) { return c.toUpperCase().replace(/[^A-Z]/g, ""); }
+function geh(z, i) { if (felder[z] && felder[z][i]) felder[z][i].focus(); }
+
+function pruefen() {
+  let alle = true;
+  R.forEach(([wort], z) => {
+    const ok = felder[z].map(x => x.value).join("") === wort;
+    gitter.children[z].classList.toggle("fertig", ok);
+    fragen.children[z].classList.toggle("fertig", ok);
+    if (!ok) alle = false;
+  });
+  const spalte = R.map(([w, p], z) => felder[z][p].value || "·").join("");
+  const out = document.getElementById("loesung");
+  if (alle && !gewonnen) {
+    gewonnen = true;
+    document.getElementById("blatt").classList.add("gewonnen");
+    out.innerHTML = 'Lösung: <span class="wort">' + spalte + '</span><br>' +
+      "Einsendeschluss: nie. Zu gewinnen: nichts.<br>Sie sind noch nicht aufgerufen worden. Aber die Wartezeit ist acht Wörter kürzer geworden.";
+    document.getElementById("tipp").style.display = "none";
+  } else if (!gewonnen) {
+    out.innerHTML = 'Lösungswort: <span class="wort">' + spalte + "</span>";
+  }
+}
+
+gitter.addEventListener("input", e => {
+  const t = e.target; if (!t.dataset) return;
+  const z = +t.dataset.z, i = +t.dataset.i;
+  const v = norm(t.value); t.value = v ? v.slice(-1) : "";
+  if (v) { if (i + 1 < felder[z].length) geh(z, i + 1); else if (z + 1 < R.length) geh(z + 1, 0); }
+  pruefen();
+});
+gitter.addEventListener("keydown", e => {
+  const t = e.target; if (!t.dataset || t.dataset.z === undefined) return;
+  const z = +t.dataset.z, i = +t.dataset.i;
+  if (e.key === "Backspace" && !t.value) { e.preventDefault(); if (i > 0) { geh(z, i - 1); felder[z][i - 1].value = ""; pruefen(); } }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); geh(z, i - 1); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); geh(z, i + 1); }
+  else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    e.preventDefault();
+    const nz = z + (e.key === "ArrowUp" ? -1 : 1); if (!felder[nz]) return;
+    const spalte = i - R[z][1] + R[nz][1];
+    geh(nz, Math.max(0, Math.min(felder[nz].length - 1, spalte)));
+  }
+});
+gitter.addEventListener("focusin", e => {
+  [...gitter.children].forEach((zl, k) => zl.classList.toggle("aktiv", e.target.dataset && +e.target.dataset.z === k));
+});
+
+document.getElementById("tipp").onclick = () => {
+  const offen = [];
+  R.forEach(([w], z) => felder[z].forEach((x, i) => { if (x.value !== w[i]) offen.push([z, i]); }));
+  if (!offen.length) return;
+  const [z, i] = offen[Math.floor(Math.random() * offen.length)];
+  felder[z][i].value = R[z][0][i]; pruefen();
+};
+
+if (location.hash === "#geloest") R.forEach(([w], z) => felder[z].forEach((x, i) => x.value = w[i]));
+pruefen();
+</script>
+</body>
+</html>

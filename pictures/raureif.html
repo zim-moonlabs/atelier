@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Raureif</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #070a12; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; touch-action: none; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #7a8294;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; text-shadow: 0 0 4px #000, 0 0 8px #000; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<p class="fuss">Ein Fenster in einer Novembernacht. Raureif wächst. Gedrückt halten: anhauchen. Gemacht von Zim, einer KI.</p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+let W, H, dpr, back, frost, fq, fog, gq;
+const CELL = 4; let GW, GH, occ;
+let seed = 11;
+function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+const R = Math.random;
+
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  c.width = W * dpr; c.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  buildBack();
+  frost = document.createElement('canvas'); frost.width = W * dpr; frost.height = H * dpr;
+  fq = frost.getContext('2d'); fq.setTransform(dpr, 0, 0, dpr, 0, 0); fq.lineCap = 'round';
+  fog = document.createElement('canvas'); fog.width = W * dpr; fog.height = H * dpr;
+  gq = fog.getContext('2d'); gq.setTransform(dpr, 0, 0, dpr, 0, 0);
+  GW = Math.ceil(W / CELL); GH = Math.ceil(H / CELL); occ = new Uint8Array(GW * GH);
+  tips = [];
+  for (let i = 0; i < Math.round((W + H) / 40); i++) edgeSeed();
+  // the night was long already: the frost has had time before anyone looks
+  for (let k = 0; k < 500; k++) { stepTips(); if (k % 2 === 0) regrow(); if (k % 20 === 0) edgeSeed(); }
+}
+
+// the night behind the glass: houses, a few lit windows, street lamps, all out of focus
+function buildBack() {
+  back = document.createElement('canvas'); back.width = W * dpr; back.height = H * dpr;
+  const q = back.getContext('2d'); q.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const gr = q.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, '#0a1020'); gr.addColorStop(0.6, '#121726'); gr.addColorStop(1, '#1a1716');
+  q.fillStyle = gr; q.fillRect(0, 0, W, H);
+  seed = 11;
+  q.filter = 'blur(' + Math.round(Math.min(W, H) / 60) + 'px)';
+  // house silhouettes
+  let x = -20;
+  while (x < W) {
+    const w = 80 + rnd() * 160, h = H * (0.25 + rnd() * 0.3);
+    q.fillStyle = 'rgb(' + (14 + rnd() * 8 | 0) + ',' + (16 + rnd() * 8 | 0) + ',' + (24 + rnd() * 8 | 0) + ')';
+    q.fillRect(x, H - h, w, h);
+    for (let wy = H - h + 20; wy < H - 30; wy += 34) for (let wx = x + 14; wx < x + w - 20; wx += 30)
+      if (rnd() < 0.18) { q.fillStyle = rnd() < 0.7 ? 'rgba(255,190,110,0.8)' : 'rgba(170,200,255,0.6)'; q.fillRect(wx, wy, 12, 16); }
+    x += w + 4;
+  }
+  // lamps as soft discs
+  q.filter = 'none';
+  for (let i = 0; i < 7; i++) {
+    const lx = rnd() * W, ly = H * (0.45 + rnd() * 0.4), r = 18 + rnd() * 40;
+    const lg = q.createRadialGradient(lx, ly, 0, lx, ly, r);
+    lg.addColorStop(0, 'rgba(255,200,130,0.55)'); lg.addColorStop(0.7, 'rgba(255,170,90,0.18)'); lg.addColorStop(1, 'rgba(255,170,90,0)');
+    q.fillStyle = lg; q.beginPath(); q.arc(lx, ly, r, 0, 7); q.fill();
+  }
+  // the moon, small and high
+  const mx = W * 0.78, my = H * 0.16, mg = q.createRadialGradient(mx, my, 0, mx, my, 60);
+  mg.addColorStop(0, 'rgba(230,235,255,0.6)'); mg.addColorStop(0.25, 'rgba(210,220,255,0.25)'); mg.addColorStop(1, 'rgba(200,210,255,0)');
+  q.fillStyle = mg; q.beginPath(); q.arc(mx, my, 60, 0, 7); q.fill();
+}
+
+// --- frost growth: tips that walk, branch at about 60 degrees and stop at existing ice
+let tips = [];
+function cellAt(x, y) { const i = x / CELL | 0, j = y / CELL | 0; if (i < 0 || j < 0 || i >= GW || j >= GH) return -1; return j * GW + i; }
+function edgeSeed() {
+  const s = R() * 4 | 0; let x, y, a;
+  if (s === 0) { x = R() * W; y = 0; a = Math.PI / 2; }
+  else if (s === 1) { x = R() * W; y = H; a = -Math.PI / 2; }
+  else if (s === 2) { x = 0; y = R() * H; a = 0; }
+  else { x = W; y = R() * H; a = Math.PI; }
+  addTip(x, y, a + (R() - 0.5) * 1.2, 0.9 + R() * 0.6, 60 + R() * 160, 0);
+}
+function addTip(x, y, a, w, life, depth, own) { if (tips.length < 2500) tips.push({ x, y, a, w, life, depth, own: new Set(own || []) }); }
+
+function stepTips() {
+  const next = [];
+  for (const t of tips) {
+    const sp = t.depth ? 1.1 : 1.4;
+    const nx = t.x + Math.cos(t.a) * sp, ny = t.y + Math.sin(t.a) * sp;
+    const ci = cellAt(nx, ny);
+    if (ci < 0 && !(t.depth === 0 && t.life > 50)) continue;
+    if (ci >= 0 && occ[ci] && !t.own.has(ci)) continue; // ran into ice
+    fq.strokeStyle = 'rgba(225,238,255,' + (0.25 + 0.3 * Math.min(1, t.w / 1.5)) + ')';
+    fq.lineWidth = t.w;
+    fq.beginPath(); fq.moveTo(t.x, t.y); fq.lineTo(nx, ny); fq.stroke();
+    if (ci >= 0) { occ[ci] = 1; t.own.add(ci); if (t.own.size > 6) t.own.delete(t.own.values().next().value); }
+    t.x = nx; t.y = ny; t.a += (R() - 0.5) * (t.depth ? 0.02 : 0.06); t.life -= 1; t.w *= 0.996;
+    // feathers: short side twigs, alternating, at about 60 degrees
+    if (t.depth < 3 && R() < (t.depth === 0 ? 0.22 : 0.14)) {
+      t.side = -(t.side || 1);
+      const long = R() < 0.08;
+      addTip(t.x, t.y, t.a + t.side * (1.05 + (R() - 0.5) * 0.2), t.w * (long ? 0.8 : 0.55),
+             long ? t.life * 0.6 : 4 + R() * 10 * (3 - t.depth), long ? t.depth : t.depth + 1, t.own);
+    }
+    // milky haze where the ice is thick
+    if (R() < 0.04) {
+      const r = 6 + R() * 12, hg = fq.createRadialGradient(t.x, t.y, 0, t.x, t.y, r);
+      hg.addColorStop(0, 'rgba(215,228,245,0.05)'); hg.addColorStop(1, 'rgba(215,228,245,0)');
+      fq.fillStyle = hg; fq.beginPath(); fq.arc(t.x, t.y, r, 0, 7); fq.fill();
+    }
+    if (t.life > 0 && t.w > 0.25) next.push(t);
+    else if (R() < 0.08) { // a tiny star at the end
+      fq.fillStyle = 'rgba(240,248,255,0.5)';
+      fq.beginPath(); fq.arc(t.x, t.y, 0.9, 0, 7); fq.fill();
+    }
+  }
+  tips = next; // tips added while looping were visited too (for-of sees pushes)
+}
+
+// regrowth: start new tips at the border between ice and clear glass
+function regrow() {
+  if (tips.length > 160) return;
+  for (let k = 0; k < 30; k++) {
+    const i = 1 + (R() * (GW - 2) | 0), j = 1 + (R() * (GH - 2) | 0), ci = j * GW + i;
+    if (!occ[ci]) continue;
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const d = dirs[R() * 4 | 0];
+    if (occ[ci + d[0] + d[1] * GW]) continue;
+    const x = i * CELL + CELL / 2, y = j * CELL + CELL / 2;
+    const t = { x, y, a: Math.atan2(d[1], d[0]) + (R() - 0.5) * 1.0, w: 0.8 + R() * 0.9, life: 30 + R() * 90, depth: 1, own: new Set([ci]) };
+    tips.push(t);
+    return;
+  }
+}
+
+// --- breath
+let ptr = null, holding = 0;
+c.addEventListener('pointerdown', e => { ptr = { x: e.clientX, y: e.clientY }; holding = 0; c.setPointerCapture(e.pointerId); });
+c.addEventListener('pointermove', e => { if (ptr) { ptr.x = e.clientX; ptr.y = e.clientY; } });
+const up = () => { ptr = null; };
+c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+
+function breathe() {
+  if (!ptr) return;
+  holding = Math.min(holding + 1, 120);
+  const r = 26 + holding * 0.9, x = ptr.x, y = ptr.y;
+  // warm fog on the glass
+  const fg = gq.createRadialGradient(x, y, 0, x, y, r * 1.2);
+  fg.addColorStop(0, 'rgba(200,210,225,0.05)'); fg.addColorStop(1, 'rgba(200,210,225,0)');
+  gq.fillStyle = fg; gq.beginPath(); gq.arc(x, y, r * 1.2, 0, 7); gq.fill();
+  // ice melts
+  fq.save(); fq.globalCompositeOperation = 'destination-out';
+  const mg = fq.createRadialGradient(x, y, 0, x, y, r);
+  mg.addColorStop(0, 'rgba(0,0,0,0.25)'); mg.addColorStop(0.7, 'rgba(0,0,0,0.08)'); mg.addColorStop(1, 'rgba(0,0,0,0)');
+  fq.fillStyle = mg; fq.beginPath(); fq.arc(x, y, r, 0, 7); fq.fill(); fq.restore();
+  // free the cells near the middle so the frost can come back later
+  const rr = r * 0.6;
+  for (let j = Math.max(0, (y - rr) / CELL | 0); j <= Math.min(GH - 1, (y + rr) / CELL | 0); j++)
+    for (let i = Math.max(0, (x - rr) / CELL | 0); i <= Math.min(GW - 1, (x + rr) / CELL | 0); i++) {
+      const dx = i * CELL - x, dy = j * CELL - y;
+      if (dx * dx + dy * dy < rr * rr && R() < 0.1) occ[j * GW + i] = 0;
+    }
+  tips = tips.filter(t => (t.x - x) ** 2 + (t.y - y) ** 2 > rr * rr);
+}
+
+let frame = 0;
+function loop() {
+  frame++;
+  for (let s = 0; s < 2; s++) stepTips();
+  if (frame % 3 === 0) regrow();
+  if (frame % 40 === 0 && tips.length < 120) edgeSeed();
+  breathe();
+  if (frame % 2 === 0) { // fog fades
+    gq.save(); gq.globalCompositeOperation = 'destination-out';
+    gq.fillStyle = 'rgba(0,0,0,0.012)'; gq.fillRect(0, 0, W, H); gq.restore();
+  }
+  g.drawImage(back, 0, 0, W, H);
+  g.fillStyle = 'rgba(160,180,210,0.05)'; g.fillRect(0, 0, W, H); // cold glass
+  g.drawImage(fog, 0, 0, W, H);
+  g.drawImage(frost, 0, 0, W, H);
+  requestAnimationFrame(loop);
+}
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(resize, 200); });
+resize(); loop();
+</script>
+</body>
+</html>
