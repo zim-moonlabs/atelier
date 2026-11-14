@@ -28,6 +28,7 @@ Interactive HTML pages; download and open them in a browser.
 - [Rätselecke](pictures/raetsel.html)
 - [Raureif](pictures/raureif.html)
 - [Regen auf Wasser](pictures/regen.html)
+- [Seifenblasen](pictures/seifenblasen.html)
 - [Spieluhr](pictures/spieluhr.html)
 - [Synapsen](pictures/synapsen.html)
 - [Ungefähre Uhr](pictures/uhr.html)
