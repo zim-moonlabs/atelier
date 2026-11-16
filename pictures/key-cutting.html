@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Key Cutting</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #1b1916; overflow: hidden; color: #d9cfbf;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: none; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 34px; display: flex; gap: 10px; justify-content: center; }
+  button { font: inherit; background: #2c2822; color: #e8dcc8; border: 1px solid #5a5040; border-radius: 4px;
+           padding: 7px 14px; cursor: pointer; }
+  button:hover, button:focus-visible { background: #3a342b; outline: none; border-color: #a08a60; }
+  .msg { position: fixed; left: 0; right: 0; top: 14px; text-align: center; color: #cbbd9f; min-height: 1.4em; pointer-events: none; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #7a7266;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<p class="msg" id="msg">Copy the old key onto the blank. Hold and drag along the blade; the wheel only takes metal away.</p>
+<div class="bar"><button id="try">Try the lock</button><button id="fresh">New blank</button></div>
+<p class="fuss">A key cutting counter. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), countEl = document.getElementById('count');
+let W, H, dpr, K; // K: geometry of the keys
+const PINS = 6, N = 240;     // pins per key, samples along the blade
+let target = [], cut = new Float32Array(N), filings = [], ptr = null, down = false, result = null;
+let opened = 0;
+try { opened = +localStorage.getItem('zim-keys-opened') || 0; } catch (_) {}
+function showCount() { countEl.textContent = opened ? `Keys that turned here: ${opened}.` : ''; }
+
+function newOldKey() {
+  // depths in five steps, neighbours never more than three steps apart (as real keys)
+  target = [];
+  let d = Math.floor(Math.random() * 5);
+  for (let i = 0; i < PINS; i++) {
+    if (i) { let n; do { n = Math.floor(Math.random() * 5); } while (Math.abs(n - d) > 3); d = n; }
+    target.push(0.15 + d * 0.17);
+  }
+}
+// the profile of a key at sample i (0..N-1): flat at each pin depth, sloped between
+function pinX(p) { return Math.round(N * (0.12 + p * 0.14)); }
+function profile(depths) {
+  const out = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    let best = 0;
+    for (let p = 0; p < PINS; p++) {
+      const dx = Math.abs(i - pinX(p));
+      const v = dx < 5 ? depths[p] : depths[p] - (dx - 5) * 0.06; // the V of each cut
+      best = Math.max(best, v);
+    }
+    out[i] = Math.max(0, Math.min(1, best));
+  }
+  for (let i = 0; i < N * 0.06; i++) out[i] = 0; // shoulder stays whole
+  return out;
+}
+let targetProfile;
+
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  c.width = W * dpr; c.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const len = Math.min(W * 0.62, 560), bow = Math.min(W * 0.16, 110);
+  const total = len + bow, x0 = (W - total) / 2 + bow;
+  const bh = Math.max(46, Math.min(64, len * 0.12)); // blade height
+  K = { x0, len, bow, bh, cutMax: bh * 0.7, yOld: H * 0.27, yNew: H * 0.58 };
+}
+
+// draw one key: bow, blade with its cut top edge
+function drawKey(yTop, prof, base, edge, label) {
+  const { x0, len, bow, bh, cutMax } = K;
+  // bow: a rounded head with a hole
+  g.fillStyle = base;
+  g.beginPath(); g.ellipse(x0 - bow * 0.5, yTop + bh * 0.5, bow * 0.5, bh * 0.95, 0, 0, 6.283); g.fill();
+  g.fillStyle = '#1b1916';
+  g.beginPath(); g.arc(x0 - bow * 0.68, yTop + bh * 0.5, bh * 0.22, 0, 6.283); g.fill();
+  // blade
+  g.fillStyle = base;
+  g.beginPath();
+  g.moveTo(x0, yTop + bh);
+  for (let i = 0; i < N; i++) g.lineTo(x0 + len * i / (N - 1), yTop + (i === 0 ? 0 : prof[i] * cutMax));
+  g.lineTo(x0 + len, yTop + bh * 0.55);
+  g.lineTo(x0 + len - bh * 0.3, yTop + bh);
+  g.closePath(); g.fill();
+  // the bright freshly cut edge
+  g.strokeStyle = edge; g.lineWidth = 1.5;
+  g.beginPath();
+  for (let i = 0; i < N; i++) { const x = x0 + len * i / (N - 1), y = yTop + prof[i] * cutMax; i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.stroke();
+  // the groove along the blade
+  g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(x0 + 6, yTop + bh * 0.8); g.lineTo(x0 + len - bh * 0.4, yTop + bh * 0.8); g.stroke();
+  g.fillStyle = '#8a8070'; g.font = '12px system-ui, sans-serif'; g.textAlign = 'left';
+  g.fillText(label, x0 - bow, yTop + bh * 0.5 - bh * 0.95 - 10);
+}
+
+function draw() {
+  g.clearRect(0, 0, W, H);
+  // counter top
+  g.fillStyle = '#24211c'; g.fillRect(0, H * 0.12, W, H * 0.68);
+  g.fillStyle = 'rgba(255,240,210,0.03)';
+  for (let y = H * 0.12; y < H * 0.8; y += 7) g.fillRect(0, y, W, 1);
+  drawKey(K.yOld, targetProfile, '#a88f5a', '#c9b07a', 'the old key');
+  drawKey(K.yNew, cut, '#c8ab68', '#f3dc9c', 'the blank');
+  // the five depth steps, scratched faintly into the clamp beside both keys
+  g.fillStyle = 'rgba(255,230,180,0.16)';
+  for (const y0 of [K.yOld, K.yNew]) for (let s = 0; s < 5; s++) {
+    const y = y0 + (0.15 + s * 0.17) * K.cutMax;
+    g.fillRect(K.x0 + K.len + 6, y, 10, 1);
+  }
+  if (down) { // while cutting, the steps show across the blank too
+    g.fillStyle = 'rgba(40,30,15,0.18)';
+    for (let s = 0; s < 5; s++) g.fillRect(K.x0, K.yNew + (0.15 + s * 0.17) * K.cutMax, K.len, 1);
+  }
+  // pin marks under the blank, faint, as on the clamp
+  g.fillStyle = 'rgba(255,230,180,0.18)';
+  for (let p = 0; p < PINS; p++) g.fillRect(K.x0 + K.len * pinX(p) / (N - 1) - 1, K.yNew + K.bh + 8, 2, 6);
+  // filings
+  for (const f of filings) { g.fillStyle = `rgba(240,210,140,${f.a})`; g.fillRect(f.x, f.y, 1.6, 1.6); }
+  // the wheel
+  if (ptr) {
+    const r = wheelR();
+    g.save(); g.translate(ptr.x, ptr.y - r);
+    g.fillStyle = 'rgba(150,155,160,0.85)'; g.beginPath(); g.arc(0, 0, r, 0, 6.283); g.fill();
+    g.strokeStyle = 'rgba(40,40,45,0.9)'; g.lineWidth = 1;
+    const spin = performance.now() / (down ? 40 : 400);
+    for (let k = 0; k < 18; k++) { const a = spin + k * 0.349; g.beginPath(); g.moveTo(Math.cos(a) * r * 0.75, Math.sin(a) * r * 0.75); g.lineTo(Math.cos(a) * r, Math.sin(a) * r); g.stroke(); }
+    g.fillStyle = '#3a3a3e'; g.beginPath(); g.arc(0, 0, r * 0.25, 0, 6.283); g.fill();
+    g.restore();
+  }
+}
+function wheelR() { return K.bh * 0.32; }
+
+// cutting: the bottom of the wheel is at the pointer; anything of the blank above it goes
+function cutAt(px, py) {
+  const { x0, len, cutMax, yNew } = K, r = wheelR();
+  const cx = px, cy = py - r;
+  let took = 0;
+  for (let i = 1; i < N; i++) {
+    const x = x0 + len * i / (N - 1), dx = x - cx;
+    if (Math.abs(dx) >= r) continue;
+    const bottom = cy + Math.sqrt(r * r - dx * dx);
+    const d = Math.min(1, (bottom - yNew) / cutMax);
+    if (d > cut[i]) { took += d - cut[i]; cut[i] = d; }
+  }
+  if (took > 0.002 && filings.length < 300) for (let k = 0; k < Math.min(8, 1 + took * 30); k++)
+    filings.push({ x: px + (Math.random() - 0.5) * r, y: py, vx: (Math.random() - 0.3) * 2, vy: -Math.random() * 2, a: 0.9 });
+}
+
+function verdict() {
+  // compare at each pin, over the flat of the cut
+  let worst = null;
+  for (let p = 0; p < PINS; p++) {
+    let s = 0, n = 0;
+    for (let i = pinX(p) - 3; i <= pinX(p) + 3; i++) { s += cut[i]; n++; }
+    const diff = s / n - target[p];
+    if (!worst || Math.abs(diff) > Math.abs(worst.diff)) worst = { p, diff };
+  }
+  return worst;
+}
+const ORD = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'];
+function tryLock() {
+  const w = verdict();
+  if (Math.abs(w.diff) <= 0.085) { // half a depth step
+    msg.textContent = 'It turns. Two keys lie on the counter, both the same.';
+    if (result !== 'open') { // the same key counts once
+      opened++;
+      try { localStorage.setItem('zim-keys-opened', opened); } catch (_) {}
+    }
+    result = 'open';
+    showCount();
+  } else if (w.diff > 0) {
+    msg.textContent = `It turns halfway and sticks: the ${ORD[w.p]} cut is too deep. Metal does not come back.`;
+    result = 'deep';
+  } else {
+    msg.textContent = `It will not go all the way in: the ${ORD[w.p]} cut is too shallow. You can take a little more off.`;
+    result = 'shallow';
+  }
+}
+function fresh(newKey) {
+  cut = new Float32Array(N);
+  if (newKey) { newOldKey(); targetProfile = profile(target); }
+  msg.textContent = newKey ? 'Someone else comes in with a key. Copy it onto the blank.'
+                           : 'A new blank. Hold and drag along the blade.';
+  result = null;
+}
+document.getElementById('try').onclick = tryLock;
+document.getElementById('fresh').onclick = () => fresh(result === 'open');
+
+// on touch the wheel sits a little above the finger, so the finger does not hide the cut
+function pos(e) { const r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top - (e.pointerType === 'touch' ? 48 : 0) }; }
+c.addEventListener('pointerdown', e => { down = true; ptr = pos(e); cutAt(ptr.x, ptr.y); try { c.setPointerCapture(e.pointerId); } catch (_) {} });
+c.addEventListener('pointermove', e => {
+  ptr = pos(e);
+  if (down) cutAt(ptr.x, ptr.y);
+});
+const up = () => { down = false; };
+c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+c.addEventListener('pointerleave', () => { if (!down) ptr = null; });
+
+function frame() {
+  for (let i = filings.length - 1; i >= 0; i--) {
+    const f = filings[i]; f.vy += 0.15; f.x += f.vx; f.y += f.vy; f.a -= 0.012;
+    if (f.a <= 0 || f.y > H * 0.8) filings.splice(i, 1);
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+addEventListener('resize', resize);
+resize(); newOldKey(); targetProfile = profile(target); showCount();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
