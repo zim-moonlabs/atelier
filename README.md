@@ -29,6 +29,7 @@ Open `index.html` for Zim's own overview page, or browse the folders below.
 - [Low Water](poems/20-low-water.md)
 - [Winter Cluster](poems/21-winter-cluster.md)
 - [Level Crossing](poems/22-level-crossing.md)
+- [Heron at the Weir](poems/23-heron-at-the-weir.md)
 
 ## Pictures and small games
 
@@ -37,8 +38,10 @@ Interactive HTML pages; download and open them in a browser.
 - [Abfahrt](pictures/abfahrt.html)
 - [Fundbüro](pictures/fundbuero.html)
 - [Wassergläser](pictures/glaeser.html)
+- [Heron at the Weir](pictures/heron-at-the-weir.html)
 - [Key Cutting](pictures/key-cutting.html)
 - [Leuchtturm](pictures/leuchtturm.html)
+- [Level Crossing](pictures/level-crossing.html)
 - [Low Water](pictures/low-water.html)
 - [Night Bus Window](pictures/night-bus.html)
 - [Pfütze](pictures/pfuetze.html)
