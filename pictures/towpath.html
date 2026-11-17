@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Towpath</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #6b7686; overflow: hidden; color: #2f3337;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  .msg { position: fixed; left: 0; right: 0; top: 14px; text-align: center; color: #f3ece2; min-height: 1.4em;
+         pointer-events: none; font: italic 16px/1.4 Georgia, serif; transition: opacity 1.5s; padding: 0 12px;
+         text-shadow: 0 1px 2px rgba(40,44,56,0.5); }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #e4e7dc;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; padding: 0 8px; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A canal towpath at dawn. A woman and her dog walk along it past moored narrowboats with smoking chimneys. A leaf drifts on the water, slower than walking, to the lock gate and goes over it. Tap the water to drop another leaf."></canvas>
+<p class="msg" id="msg"></p>
+<p class="fuss">A canal towpath at dawn. Tap the water to drop a leaf. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), countEl = document.getElementById('count');
+let W, H, dpr, fig;
+let over = 0;
+try { over = +localStorage.getItem('zim-towpath-over') || 0; } catch (_) {}
+function showCount() { countEl.textContent = over ? `Leaves gone over the gate: ${over}.` : ''; }
+showCount();
+
+// layout, as fractions of the screen
+const L = { bank: 0.42, water: 0.48, low: 0.58, edge: 0.66, path: 0.73, grass: 0.78, gate: 0.8, lamp: 0.07 };
+const POSTS = [0.2, 0.32, 0.44, 0.56];
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight; fig = Math.min(H * 0.12, W * 0.2);
+  c.width = W * dpr; c.height = H * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+let lastMsg = '';
+function say(s) {
+  if (s === lastMsg) return;
+  lastMsg = s; msg.style.opacity = 0;
+  setTimeout(() => { msg.textContent = s; msg.style.opacity = s ? 1 : 0; }, 400);
+}
+
+// positions of the walkers are fractions of W, so a resize does not break them
+const woman = { x: -0.04, phase: 'walk', t: 0, step: 0 };
+const dog = { x: -0.01, state: 'trot', t: 0, dir: 1, sniffed: new Set(), step: 0 };
+const WALK = 1 / 65;                 // screen widths per second
+const STOP = L.gate - 0.15, WAIT = 36;
+let leaves = [], smoke = [], fringe = [], cycleT = 0, saidLines = new Set();
+function sayOnce(key, s) { if (!saidLines.has(key)) { saidLines.add(key); say(s); } }
+
+function dropLeaf(x, fromY) {
+  if (leaves.length >= 12) return;
+  leaves.push({ x, y: fromY, lane: 0.035 + Math.random() * 0.1, phase: 'drop', vy: 0, rot: Math.random() * 6,
+                a: 1, hue: 28 + Math.random() * 18, seed: Math.random() * 10 });
+}
+function newCycle() {
+  woman.x = -0.04; woman.phase = 'walk'; woman.t = 0;
+  dog.x = -0.01; dog.state = 'trot'; dog.sniffed = new Set();
+  cycleT = 0; saidLines = new Set();
+  dropLeaf(0.1, L.bank - 0.1);       // the tree on the far bank lets one go
+}
+newCycle();
+
+function step(dt) {
+  cycleT += dt;
+  // the woman
+  woman.t += dt;
+  if (woman.phase === 'walk') {
+    woman.x += WALK * dt; woman.step += dt;
+    if (woman.x > L.lamp + 0.03) sayOnce('lamp', 'The towpath starts where the last lamp gives out.');
+    if (woman.x > 0.3) sayOnce('boats', 'The moored boats, green and red, breathe stove smoke up into the cold, still air.');
+    if (woman.x > 0.5) sayOnce('water', 'The water looks as if it’s standing there. It isn’t.');
+    if (woman.x >= STOP) { woman.x = STOP; woman.phase = 'stop'; woman.t = 0; say('The woman stops. The dog sits on her toes.'); }
+  } else if (woman.phase === 'stop') {
+    if (woman.t > WAIT) { woman.phase = 'on'; woman.t = 0; say(''); }
+  } else if (woman.phase === 'on') {
+    woman.x += WALK * dt; woman.step += dt;
+    if (woman.x > 1.08 && dog.x > 1.05) newCycle();
+  }
+  // the dog: trots ahead, reads posts, turns about, catches up; at the lock it sits
+  dog.t += dt;
+  const pace = 2.3 * WALK;
+  if (woman.phase === 'stop') {
+    const target = woman.x + 0.012;
+    if (Math.abs(dog.x - target) > 0.003) { dog.dir = Math.sign(target - dog.x); dog.x += dog.dir * pace * dt; dog.step += dt; dog.state = 'trot'; }
+    else dog.state = 'sit';
+  } else if (dog.state === 'sniff') {
+    dog.dir = dog.t > dog.len - 0.7 ? -1 : 1;      // turns about to look for her
+    if (dog.t > dog.len) { dog.state = 'trot'; dog.t = 0; }
+  } else {
+    const target = woman.x + 0.04;
+    if (dog.x < target) { dog.x = Math.min(target, dog.x + pace * dt); dog.dir = 1; dog.step += dt; }
+    else dog.dir = 1;
+    if (dog.state === 'sit') dog.state = 'trot';
+    for (const p of POSTS) {
+      if (!dog.sniffed.has(p) && dog.x > p - 0.012 && dog.x < p + 0.01 && woman.phase === 'walk') {
+        dog.sniffed.add(p);
+        if (Math.random() < 0.85) { dog.state = 'sniff'; dog.t = 0; dog.len = 3 + Math.random() * 3;
+          sayOnce('dog', 'The dog reads every post and turns about,'); }
+      }
+    }
+  }
+  // leaves: slower than walking, then over the gate
+  const lvSpeed = (L.gate - 0.1) / 68;
+  for (const f of leaves) {
+    const waterY = L.water + f.lane;
+    if (f.phase === 'drop') {
+      f.vy = Math.min(0.03, f.vy + 0.02 * dt); f.y += f.vy * dt; f.x += Math.sin(cycleT * 2 + f.seed) * 0.004 * dt; f.rot += dt * 2;
+      if (f.y >= waterY) { f.y = waterY; f.phase = 'float'; }
+    } else if (f.phase === 'float') {
+      f.x += lvSpeed * dt; f.rot += Math.sin(cycleT * 0.7 + f.seed) * 0.15 * dt;
+      f.y = waterY + Math.sin(cycleT * 1.3 + f.seed) * 0.0012;
+      if (f.x >= L.gate - 0.004) { f.phase = 'fall'; f.vy = 0; f.y = L.water; }
+    } else if (f.phase === 'fall') {
+      f.vy += 0.5 * dt; f.y += f.vy * dt; f.x += 0.012 * dt; f.rot += dt * 5;
+      if (f.y >= L.low + 0.03) {
+        f.phase = 'below'; f.y = L.low + 0.03;
+        over++; try { localStorage.setItem('zim-towpath-over', over); } catch (_) {} showCount();
+        say(woman.phase === 'stop' ? 'The leaf goes over. Neither sees it go.' : 'The leaf goes over.');
+      }
+    } else {
+      f.x += lvSpeed * 0.6 * dt; f.a -= dt / 14; f.y = L.low + 0.03 + Math.sin(cycleT + f.seed) * 0.001;
+    }
+  }
+  leaves = leaves.filter(f => f.a > 0 && f.x < 1.02);
+  // stove smoke from two chimneys
+  for (const cx of [0.19, 0.45]) if (Math.random() < dt * 5) smoke.push({ x: cx, y: L.water - 0.035, r: 0.004, a: 0.5, s: Math.random() * 6 });
+  for (const s of smoke) { s.y -= 0.012 * dt; s.x += (0.004 + Math.sin(s.s + s.y * 40) * 0.003) * dt; s.r += 0.004 * dt; s.a -= dt / 9; }
+  smoke = smoke.filter(s => s.a > 0);
+  // the fringe of water over the top gate
+  for (let i = 0; i < 40 * dt; i++) fringe.push({ x: L.gate + 0.002 + Math.random() * 0.003, y: L.water, vx: 0.01 + Math.random() * 0.008, vy: 0.02 });
+  for (const d of fringe) { d.vy += 0.6 * dt; d.x += d.vx * dt; d.y += d.vy * dt; }
+  fringe = fringe.filter(d => d.y < L.low);
+}
+
+function draw(time) {
+  // dawn sky
+  const sky = g.createLinearGradient(0, 0, 0, H * L.bank);
+  sky.addColorStop(0, '#56627a'); sky.addColorStop(0.65, '#a7a2a8'); sky.addColorStop(1, '#e6c6a4');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H * L.bank);
+  // far bank, hedge, one tree
+  g.fillStyle = '#4c5548'; g.fillRect(0, H * L.bank, W, H * (L.water - L.bank));
+  g.fillStyle = '#3f473d';
+  for (let x = 0; x < W; x += 14) g.fillRect(x, H * L.bank - 6 - Math.abs(Math.sin(x * 0.07)) * 8, 16, 14);
+  const tx = W * 0.1, ty = H * L.bank;
+  g.strokeStyle = '#33382f'; g.lineWidth = Math.max(2, W * 0.004);
+  g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx, ty - H * 0.13); g.stroke();
+  g.lineWidth = 1.5;
+  for (let i = 0; i < 7; i++) { const a = -Math.PI / 2 + (i - 3) * 0.35, l = H * (0.05 + (i % 3) * 0.015);
+    g.beginPath(); g.moveTo(tx, ty - H * 0.09); g.lineTo(tx + Math.cos(a) * l, ty - H * 0.09 + Math.sin(a) * l); g.stroke(); }
+  g.fillStyle = 'rgba(176,112,48,0.85)';
+  for (let i = 0; i < 9; i++) g.fillRect(tx + Math.sin(i * 2.1) * H * 0.04 - 2, ty - H * 0.11 + Math.cos(i * 1.7) * H * 0.03, 4, 3);
+  // upper pound: still-looking water, with a slow drift in it
+  const gx = W * L.gate;
+  g.fillStyle = '#6f7d88'; g.fillRect(0, H * L.water, gx, H * (L.edge - L.water));
+  g.strokeStyle = 'rgba(230,206,180,0.22)'; g.lineWidth = 1;
+  for (let i = 0; i < 9; i++) {
+    const y = H * (L.water + 0.03 + i * 0.016), off = ((time / 1000) * W / 140 + i * 37) % 90;
+    for (let x = -90 + off; x < gx; x += 90) { g.beginPath(); g.moveTo(x, y); g.lineTo(Math.min(gx, x + 26 + (i % 3) * 8), y); g.stroke(); }
+  }
+  // lock chamber below the gate: wet stone, lower water
+  g.fillStyle = '#6a655d'; g.fillRect(gx, H * L.water, W - gx, H * (L.low - L.water));
+  g.fillStyle = 'rgba(40,52,48,0.35)'; g.fillRect(gx, H * (L.low - 0.025), W - gx, H * 0.025);
+  g.fillStyle = '#5f6c76'; g.fillRect(gx, H * L.low, W - gx, H * (L.edge - L.low));
+  // the fringe over the gate
+  g.fillStyle = 'rgba(235,238,232,0.6)';
+  for (const d of fringe) g.fillRect(d.x * W, d.y * H, 1.4, 2.6);
+  g.fillStyle = 'rgba(235,238,232,0.4)';
+  for (let x = gx; x < gx + W * 0.06; x += 4) g.fillRect(x, H * L.low - 1 + Math.sin(x + time * 0.006) * 1.5, 4, 3);
+  // the top gate and its balance beam
+  g.fillStyle = '#2f2a24'; g.fillRect(gx - W * 0.004, H * (L.water - 0.03), W * 0.008, H * (L.edge - L.water + 0.03));
+  // boats, green and red, nose to tail
+  drawBoat(0.13, 0.25, '#2f5a43', '#7e2a26', false, time);
+  drawBoat(0.39, 0.25, '#7e2a26', '#2f5a43', true, time);
+  for (const s of smoke) { g.fillStyle = `rgba(214,210,206,${s.a * 0.6})`; g.beginPath(); g.arc(s.x * W, s.y * H, s.r * Math.min(W, H) * 1.6, 0, Math.PI * 2); g.fill(); }
+  // leaves
+  for (const f of leaves) {
+    g.save(); g.translate(f.x * W, f.y * H); g.rotate(f.rot);
+    g.globalAlpha = Math.max(0, f.a);
+    const k = Math.max(3, Math.min(W, H) * 0.008);
+    g.fillStyle = `hsl(${f.hue},62%,46%)`;
+    g.beginPath(); g.ellipse(0, 0, k * 1.4, k * 0.7, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(70,40,20,0.6)'; g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(-k * 1.4, 0); g.lineTo(k * 1.6, 0); g.stroke();
+    g.restore(); g.globalAlpha = 1;
+  }
+  // coping stones and towpath
+  g.fillStyle = '#9b958a'; g.fillRect(0, H * L.edge, W, H * 0.012);
+  g.fillStyle = '#8f8472'; g.fillRect(0, H * (L.edge + 0.012), W, H * (L.grass - L.edge - 0.012));
+  g.fillStyle = '#4a5741'; g.fillRect(0, H * L.grass, W, H * (1 - L.grass));
+  g.fillStyle = '#56644a';
+  for (let x = 0; x < W; x += 9) g.fillRect(x, H * L.grass - 2, 2, 5 + (x * 7) % 6);
+  // posts the dog reads
+  g.fillStyle = '#3b3631';
+  for (const p of POSTS) { g.fillRect(p * W - 3, H * (L.edge + 0.004), 6, H * 0.03); }
+  // balance beam lying over the towpath at waist height
+  const beamY = H * L.path - fig * 0.48;
+  g.fillStyle = '#2f2a24'; g.fillRect(gx - W * 0.11, beamY, W * 0.11 + 3, Math.max(4, fig * 0.06));
+  g.fillStyle = '#e8e2d4'; g.fillRect(gx - W * 0.11, beamY, Math.max(4, W * 0.006), Math.max(4, fig * 0.06));
+  // the last lamp, and where its light gives out
+  const lx = W * L.lamp, ly = H * L.path;
+  const glow = g.createRadialGradient(lx, ly - fig * 1.5, 0, lx, ly - fig * 1.5, fig * 1.7);
+  glow.addColorStop(0, 'rgba(255,214,150,0.4)'); glow.addColorStop(1, 'rgba(255,214,150,0)');
+  g.fillStyle = glow; g.fillRect(lx - fig * 1.8, ly - fig * 3.3, fig * 3.6, fig * 3.6);
+  g.fillStyle = '#2a2b2c'; g.fillRect(lx - 1.5, ly - fig * 1.55, 3, fig * 1.55);
+  g.fillStyle = '#ffd896'; g.beginPath(); g.arc(lx, ly - fig * 1.58, Math.max(3, fig * 0.06), 0, Math.PI * 2); g.fill();
+  drawDog(dog.x * W, H * L.path + 2, fig * 0.3);
+  drawWoman(woman.x * W, H * L.path, fig);
+}
+
+function drawBoat(x0, len, hull, cabin, garden, time) {
+  const x = x0 * W, l = len * W, y = H * (L.water + 0.025), hh = H * 0.02, ch = H * 0.026;
+  g.fillStyle = '#1f2326'; g.fillRect(x, y - hh * 0.3, l, hh);
+  g.fillStyle = hull; g.fillRect(x, y - hh, l, hh * 0.75);
+  g.fillStyle = cabin; g.fillRect(x + l * 0.14, y - hh - ch, l * 0.8, ch);
+  g.fillStyle = '#e9d9a8';
+  for (let i = 0; i < 6; i++) g.fillRect(x + l * (0.2 + i * 0.12), y - hh - ch * 0.7, l * 0.035, ch * 0.35);
+  g.fillStyle = '#e6d3a0'; g.fillRect(x + l * 0.2 + l * 0.12 * 2, y - hh - ch * 0.7, l * 0.035, ch * 0.35);
+  // chimney
+  g.fillStyle = '#26282a'; g.fillRect(x + l * 0.24, y - hh - ch - H * 0.012, 3, H * 0.012);
+  // reflection
+  g.fillStyle = 'rgba(30,36,40,0.25)'; g.fillRect(x, y + hh * 0.7, l, hh * 1.2);
+  if (garden) {   // one roof has a bike, some logs, a flower bed
+    const ry = y - hh - ch;
+    g.strokeStyle = '#1e1f21'; g.lineWidth = 1.2;
+    const bx = x + l * 0.4, r = Math.max(3, ch * 0.32);
+    g.beginPath(); g.arc(bx, ry - r, r, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(bx + r * 3, ry - r, r, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.moveTo(bx, ry - r); g.lineTo(bx + r * 1.5, ry - r * 2.2); g.lineTo(bx + r * 3, ry - r); g.stroke();
+    g.fillStyle = '#6b4a2e';
+    for (let i = 0; i < 4; i++) g.fillRect(x + l * 0.6 + i * 5, ry - 4 - (i % 2) * 3, 4, 4);
+    g.fillStyle = '#4c3a2a'; g.fillRect(x + l * 0.75, ry - 4, l * 0.16, 4);
+    const cols = ['#d07a8a', '#e4c25a', '#e8e2e4', '#c75b4a'];
+    for (let i = 0; i < 7; i++) { g.fillStyle = cols[i % 4]; g.fillRect(x + l * 0.76 + i * l * 0.021, ry - 7 - (i % 2) * 2, 3, 3); }
+  }
+}
+
+function drawWoman(x, y, h) {
+  const moving = woman.phase !== 'stop', s = moving ? Math.sin(woman.step * 6) : 0;
+  g.strokeStyle = '#2a2a30'; g.lineWidth = h * 0.06; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x, y - h * 0.42); g.lineTo(x + s * h * 0.12, y); g.stroke();
+  g.beginPath(); g.moveTo(x, y - h * 0.42); g.lineTo(x - s * h * 0.12, y); g.stroke();
+  // long coat
+  g.fillStyle = '#5b4a5e';
+  g.beginPath(); g.moveTo(x - h * 0.1, y - h * 0.35); g.lineTo(x + h * 0.11, y - h * 0.35);
+  g.lineTo(x + h * 0.07, y - h * 0.82); g.lineTo(x - h * 0.07, y - h * 0.82); g.closePath(); g.fill();
+  // arm, still when she stops
+  g.strokeStyle = '#4b3c4e'; g.lineWidth = h * 0.05;
+  g.beginPath(); g.moveTo(x, y - h * 0.78); g.lineTo(x - s * h * 0.1 + h * 0.03, y - h * 0.5); g.stroke();
+  // head, hat
+  g.fillStyle = '#d9b9a0'; g.beginPath(); g.arc(x + h * 0.01, y - h * 0.9, h * 0.075, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#8a3d35'; g.beginPath(); g.arc(x + h * 0.01, y - h * 0.92, h * 0.078, Math.PI, 0); g.fill();
+  // lead to the dog
+  g.strokeStyle = 'rgba(40,30,30,0.6)'; g.lineWidth = 1;
+  const dx = dog.x * W, dy = H * L.path + 2 - fig * 0.3 * 0.7;
+  if (Math.abs(dx - x) < W * 0.07) { g.beginPath(); g.moveTo(x - s * h * 0.1 + h * 0.03, y - h * 0.5);
+    g.quadraticCurveTo((x + dx) / 2, y - h * 0.2, dx + dog.dir * fig * 0.3 * 0.55, dy); g.stroke(); }
+}
+
+function drawDog(x, y, k) {
+  const d = dog.dir, sit = dog.state === 'sit', sniff = dog.state === 'sniff';
+  const s = dog.state === 'trot' ? Math.sin(dog.step * 14) : 0;
+  g.fillStyle = '#3a2e26'; g.strokeStyle = '#3a2e26'; g.lineCap = 'round'; g.lineWidth = k * 0.18;
+  const bodyY = sit ? y - k * 0.55 : y - k * 0.6;
+  // legs
+  if (sit) {
+    g.beginPath(); g.moveTo(x + d * k * 0.45, bodyY - k * 0.1); g.lineTo(x + d * k * 0.5, y); g.stroke();
+    g.beginPath(); g.ellipse(x - d * k * 0.2, y - k * 0.25, k * 0.45, k * 0.28, 0, 0, Math.PI * 2); g.fill();
+  } else {
+    for (const [ox, ph] of [[0.45, 1], [-0.45, -1]]) {
+      g.beginPath(); g.moveTo(x + d * k * ox, bodyY); g.lineTo(x + d * k * ox + s * ph * k * 0.2, y); g.stroke();
+    }
+  }
+  // body, tilted up when sitting
+  g.save(); g.translate(x, bodyY); g.rotate(sit ? -d * 0.6 : 0);
+  g.beginPath(); g.ellipse(0, 0, k * 0.65, k * 0.3, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+  // tail
+  g.beginPath(); g.moveTo(x - d * k * 0.6, bodyY - (sit ? -k * 0.3 : 0));
+  g.lineTo(x - d * k * 0.95, bodyY - k * 0.35 + Math.sin(performance.now() / 120) * k * 0.08); g.stroke();
+  // head: down at a post, up otherwise
+  const hx = x + d * k * (sit ? 0.55 : 0.8), hy = sniff ? y - k * 0.2 : bodyY - k * (sit ? 0.75 : 0.35);
+  g.beginPath(); g.ellipse(hx, hy, k * 0.3, k * 0.22, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(hx + d * k * 0.28, hy + k * 0.06, k * 0.16, k * 0.1, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(hx - d * k * 0.1, hy - k * 0.15, k * 0.08, k * 0.16, d * 0.4, 0, Math.PI * 2); g.fill();
+}
+
+c.addEventListener('pointerdown', e => {
+  const x = e.clientX / W, y = e.clientY / H;
+  if (y > L.bank && y < L.edge + 0.04 && x < L.gate - 0.02) dropLeaf(Math.max(0.01, x), Math.min(y, L.water) - 0.06);
+});
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  step(dt); draw(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// for looking at it: #lock starts with the two of them stopped and a leaf near the gate
+if (location.hash === '#lock') {
+  woman.x = STOP; woman.phase = 'stop'; woman.t = 0; dog.x = STOP + 0.012; dog.state = 'sit';
+  leaves = []; dropLeaf(L.gate - 0.03, L.water + 0.06); leaves[0].phase = 'float';
+  dropLeaf(0.5, L.water + 0.08); leaves[1].phase = 'float';
+  saidLines = new Set(['lamp', 'boats', 'water', 'dog']); say('The woman stops. The dog sits on her toes.');
+}
+window.__tow = { get state() { return woman.phase; }, get dog() { return dog.state; }, over: () => over, leaves: () => leaves.length };
+</script>
+</body>
+</html>

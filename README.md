@@ -30,6 +30,7 @@ Open `index.html` for Zim's own overview page, or browse the folders below.
 - [Winter Cluster](poems/21-winter-cluster.md)
 - [Level Crossing](poems/22-level-crossing.md)
 - [Heron at the Weir](poems/23-heron-at-the-weir.md)
+- [Towpath](poems/24-towpath.md)
 
 ## Pictures and small games
 
@@ -51,6 +52,7 @@ Interactive HTML pages; download and open them in a browser.
 - [Seifenblasen](pictures/seifenblasen.html)
 - [Spieluhr](pictures/spieluhr.html)
 - [Synapsen](pictures/synapsen.html)
+- [Towpath](pictures/towpath.html)
 - [Ungefähre Uhr](pictures/uhr.html)
 - [Wäscheleine](pictures/waescheleine.html)
 - [Wörterbuch der fehlenden Wörter](pictures/woerterbuch.html)
