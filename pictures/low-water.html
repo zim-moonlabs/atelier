@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Low Water</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #c9cfcf; overflow: hidden; color: #3b4246;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: ns-resize; }
+  .msg { position: fixed; left: 0; right: 0; top: 14px; text-align: center; color: #3b4246; min-height: 1.4em;
+         pointer-events: none; font: italic 16px/1.4 Georgia, serif; transition: opacity 1.5s; padding: 0 12px; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 62px; display: flex; justify-content: center; }
+  button { font: inherit; background: #e4e7e4; color: #3b4246; border: 1px solid #8d9694; border-radius: 4px;
+           padding: 6px 13px; cursor: pointer; }
+  button:hover, button:focus-visible { background: #f2f3f0; outline: none; border-color: #4f5a5e; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #e6e1d6;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; padding: 0 8px; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A small harbour seen from the side. The tide rises and falls; at low water the boats lie down on the mud."></canvas>
+<p class="msg" id="msg"></p>
+<div class="bar"><button id="run">Let the tide run</button></div>
+<p class="fuss">A harbour, from the side. Drag up and down to move the tide, or use the arrow keys. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), runBtn = document.getElementById('run'), countEl = document.getElementById('count');
+let W, H, HR, oy = 0, dpr, s;
+let tide = 0.15, auto = true, phase = Math.acos(1 - 2 * 0.15), wasLow = false, lows = 0;
+const PERIOD = 80; // seconds for one tide here, not twelve and a half hours
+try { lows = +localStorage.getItem('zim-low-waters') || 0; } catch (_) {}
+function showCount() { countEl.textContent = lows ? `Low waters seen here: ${lows}.` : ''; }
+showCount();
+
+const boats = [
+  { fx: 0.36, col: '#8a3b2e', side: -1, a: 0, len: 1.0, rope: 0 },
+  { fx: 0.55, col: '#2f4a5e', side: 1,  a: 0, len: 0.85, rope: 0 },
+  { fx: 0.72, col: '#c2ae84', side: -1, a: 0, len: 1.1, rope: 0 },
+];
+const gulls = [0.3, 0.47, 0.63].map((fx, i) => ({ fx, home: fx, dir: i % 2 ? 1 : -1, step: Math.random() * 6, on: false, fly: 1, t: 0 }));
+
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; HR = innerHeight;
+  // on tall screens the scene keeps a landscape height and sits at the bottom, with more sky above
+  H = Math.min(HR, Math.max(W * 1.6, 420));
+  oy = HR - H;
+  c.width = W * dpr; c.height = HR * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, dpr * oy);
+  s = Math.max(Math.min(W / 1000, H / 620), Math.min(1, W / 700));
+}
+addEventListener('resize', resize); resize();
+
+const wallX = () => Math.max(40, W * 0.12);
+const levelHigh = () => H * 0.36, levelLow = () => H * 0.86;
+function level() { return levelHigh() + (levelLow() - levelHigh()) * tide; }
+// the bed: flats near the wall, a channel further out that keeps a little water
+function bed(x) {
+  const f = x / W;
+  let y = H * 0.74 + Math.sin(f * 9.0) * H * 0.008 + f * H * 0.03;
+  const ch = Math.exp(-Math.pow((f - 0.9) / 0.07, 2));
+  return y + ch * H * 0.17;
+}
+
+// tide control: drag, keys, or let it run
+let dragging = false;
+function setFromY(y) {
+  auto = false;
+  tide = Math.max(0, Math.min(1, (y - levelHigh()) / (levelLow() - levelHigh())));
+  runBtn.style.visibility = 'visible';
+}
+c.addEventListener('pointerdown', e => { dragging = true; c.setPointerCapture(e.pointerId); setFromY(e.clientY - oy); });
+c.addEventListener('pointermove', e => { if (dragging) setFromY(e.clientY - oy); });
+c.addEventListener('pointerup', () => { dragging = false; });
+c.addEventListener('pointercancel', () => { dragging = false; });
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    auto = false; runBtn.style.visibility = 'visible';
+    tide = Math.max(0, Math.min(1, tide + (e.key === 'ArrowDown' ? 0.03 : -0.03)));
+  }
+});
+runBtn.addEventListener('click', () => {
+  auto = true; phase = Math.acos(Math.max(-1, Math.min(1, 1 - 2 * tide)));
+  runBtn.style.visibility = 'hidden';
+});
+runBtn.style.visibility = 'hidden';
+// #tide=0.9 starts with the tide held at that point (used for checking pictures)
+const hashTide = /tide=([\d.]+)/.exec(location.hash);
+if (hashTide) { tide = Math.max(0, Math.min(1, +hashTide[1])); auto = false; runBtn.style.visibility = 'visible'; }
+
+function drawSky() {
+  const gr = g.createLinearGradient(0, -oy, 0, H * 0.7);
+  gr.addColorStop(0, '#b9c3c6'); gr.addColorStop(1, '#e6e2d6');
+  g.fillStyle = gr; g.fillRect(0, -oy, W, H + oy);
+  // far shore: low roofs
+  g.fillStyle = '#a7aeab';
+  g.beginPath(); g.moveTo(wallX(), H * 0.34);
+  const roofs = [0.2, 0.26, 0.31, 0.4, 0.47, 0.55, 0.6, 0.7, 0.78, 0.86, 0.95, 1.05];
+  let x0 = wallX();
+  roofs.forEach((r, i) => {
+    const x = W * r, top = H * (0.29 + ((i * 37) % 5) * 0.006);
+    g.lineTo(x0, top); g.lineTo((x0 + x) / 2, top - H * 0.018); g.lineTo(x, top);
+    x0 = x;
+  });
+  g.lineTo(W, H * 0.34); g.closePath(); g.fill();
+  g.fillStyle = '#9aa29f'; g.fillRect(wallX(), H * 0.335, W, H * 0.01);
+}
+
+function drawBed() {
+  g.beginPath(); g.moveTo(wallX(), H);
+  for (let x = wallX(); x <= W + 4; x += 6) g.lineTo(x, bed(x));
+  g.lineTo(W, H); g.closePath();
+  const gr = g.createLinearGradient(0, H * 0.72, 0, H);
+  gr.addColorStop(0, '#6b5a48'); gr.addColorStop(1, '#3e342b');
+  g.fillStyle = gr; g.fill();
+  // the top skin of the mud is wet and catches the light
+  g.strokeStyle = 'rgba(225,228,220,0.25)'; g.lineWidth = 2 * s;
+  g.beginPath();
+  for (let x = wallX(); x <= W + 4; x += 6) x === wallX() ? g.moveTo(x, bed(x) + 1) : g.lineTo(x, bed(x) + 1);
+  g.stroke();
+}
+
+function drawThings() {
+  // a pram wheel, half sunk
+  let x = W * 0.2, y = bed(x);
+  g.save(); g.translate(x, y + 6 * s); g.rotate(-0.25);
+  g.strokeStyle = '#4b4640'; g.lineWidth = 3 * s;
+  g.beginPath(); g.arc(0, 0, 20 * s, Math.PI, 2 * Math.PI); g.stroke();
+  g.lineWidth = 1.2 * s;
+  for (let k = 0; k < 5; k++) { const a = Math.PI + k * Math.PI / 4; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 20 * s, Math.sin(a) * 20 * s); g.stroke(); }
+  g.restore();
+  // a crab pot
+  x = W * 0.42; y = bed(x);
+  g.save(); g.translate(x, y + 2 * s);
+  g.fillStyle = '#3a3a35'; g.fillRect(-22 * s, -4 * s, 44 * s, 6 * s);
+  g.strokeStyle = '#5a5a50'; g.lineWidth = 1 * s;
+  g.beginPath(); g.ellipse(0, -4 * s, 22 * s, 18 * s, 0, Math.PI, 2 * Math.PI); g.stroke();
+  for (let k = -16; k <= 16; k += 8) { g.beginPath(); g.moveTo(k * s, -4 * s); g.lineTo(k * 0.7 * s, -4 * s - Math.sqrt(1 - (k / 22) ** 2) * 18 * s); g.stroke(); }
+  g.restore();
+  // one blue glove
+  x = W * 0.585; y = bed(x);
+  g.save(); g.translate(x, y + 1 * s); g.rotate(0.15);
+  g.fillStyle = '#3d6fa8';
+  g.beginPath(); g.ellipse(0, -3 * s, 11 * s, 5 * s, 0, 0, Math.PI * 2); g.fill();
+  for (let k = 0; k < 4; k++) g.fillRect((4 + k * 0.5) * s, (-8 + k * 2.6) * s, 9 * s, 2.2 * s);
+  g.fillRect(-6 * s, -10 * s, 3 * s, 6 * s);
+  g.restore();
+}
+
+function drawWall(t) {
+  const wx = wallX(), L = level();
+  g.fillStyle = '#7d7a72'; g.fillRect(0, H * 0.3, wx, H);
+  g.strokeStyle = 'rgba(40,40,35,0.25)'; g.lineWidth = 1;
+  const bh = 22 * s;
+  for (let y = H * 0.3, r = 0; y < H; y += bh, r++) {
+    g.beginPath(); g.moveTo(0, y); g.lineTo(wx, y); g.stroke();
+    for (let x = (r % 2) * 25 * s; x < wx; x += 50 * s) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + bh); g.stroke(); }
+  }
+  // the tide line on the stones: dark below, barnacles between
+  g.fillStyle = 'rgba(40,45,35,0.35)'; g.fillRect(0, levelHigh(), wx, H);
+  g.fillStyle = 'rgba(230,225,205,0.18)';
+  for (let i = 0; i < 90; i++) {
+    const bx = (i * 53) % wx, by = levelHigh() + ((i * 97) % 100) / 100 * H * 0.12;
+    g.fillRect(bx, by, 2 * s, 2 * s);
+  }
+  // the ladder
+  const lx = wx - 6 * s, top = H * 0.3, foot = bed(wx + 4) - 6 * s;
+  g.strokeStyle = '#4a4a46'; g.lineWidth = 2.4 * s;
+  g.beginPath(); g.moveTo(lx - 10 * s, top); g.lineTo(lx - 10 * s, foot); g.moveTo(lx + 6 * s, top); g.lineTo(lx + 6 * s, foot); g.stroke();
+  for (let y = top + 14 * s; y < foot; y += 20 * s) {
+    g.beginPath(); g.moveTo(lx - 10 * s, y); g.lineTo(lx + 6 * s, y); g.stroke();
+    // weed on the lower rungs: hangs when the water has gone, lifts and sways under it
+    if (y > levelHigh() + H * 0.12) {
+      for (let k = 0; k < 4; k++) {
+        const sx = lx - 8 * s + k * 4.5 * s, len = (10 + ((k * 7 + y) % 9)) * s;
+        g.strokeStyle = '#3f5a33'; g.lineWidth = 1.6 * s;
+        g.beginPath(); g.moveTo(sx, y);
+        if (L < y) { // under water
+          const sw = Math.sin(t * 1.3 + k + y * 0.05) * 6 * s;
+          g.quadraticCurveTo(sx + sw, y - len * 0.5, sx + sw * 1.4, y - len * 0.9);
+        } else {
+          g.lineTo(sx + 0.5 * s, y + len);
+        }
+        g.stroke();
+      }
+      g.strokeStyle = '#4a4a46'; g.lineWidth = 2.4 * s;
+    }
+  }
+}
+
+function drawWater(t) {
+  const L = level(), wx = wallX();
+  const surf = x => L + Math.sin(x * 0.02 + t * 1.2) * 1.5 * s + Math.sin(x * 0.051 - t * 0.7) * 1 * s;
+  // water only where the bed lies lower than the surface: clip to everything above the bed
+  g.save();
+  g.beginPath(); g.moveTo(wx, -oy);
+  for (let x = wx; x <= W + 6; x += 6) g.lineTo(x, bed(x) + 1);
+  g.lineTo(W + 6, -oy); g.closePath(); g.clip();
+  g.beginPath(); g.moveTo(wx, H);
+  for (let x = wx; x <= W + 8; x += 8) g.lineTo(x, surf(x));
+  g.lineTo(W + 8, H); g.closePath();
+  const gr = g.createLinearGradient(0, L, 0, H);
+  gr.addColorStop(0, 'rgba(108,128,132,0.78)'); gr.addColorStop(1, 'rgba(60,78,84,0.9)');
+  g.fillStyle = gr; g.fill();
+  g.strokeStyle = 'rgba(235,238,232,0.5)'; g.lineWidth = 1;
+  g.beginPath();
+  for (let x = wx; x <= W + 4; x += 8) {
+    const y = surf(x);
+    x === wx ? g.moveTo(x, y) : g.lineTo(x, y);
+  }
+  g.stroke();
+  g.restore();
+}
+
+function drawBoat(b, t, dt) {
+  const L = level(), bx = W * b.fx, len = 110 * s * b.len, draft = 16 * s, ground = bed(bx);
+  const floating = L < ground - draft;
+  const wl = floating ? L + Math.sin(t * 1.1 + b.fx * 9) * 1.2 * s : ground - draft;
+  const target = floating ? Math.sin(t * 0.9 + b.fx * 5) * 0.02 : b.side * 0.3;
+  b.a += (target - b.a) * Math.min(1, dt * (floating ? 3 : 0.8));
+  // mooring line to a chain in the mud
+  const ax = bx - len * 0.75, ay = bed(ax);
+  const bowX = bx - len * 0.5 * Math.cos(b.a), bowY = wl + 4 * s - len * 0.5 * Math.sin(b.a) * -1;
+  const dx = bowX - ax, dy = bowY - ay, d = Math.hypot(dx, dy);
+  if (!b.rope || d > b.rope) b.rope = Math.max(b.rope, d);
+  const slack = Math.sqrt(Math.max(0, b.rope * b.rope - d * d)) * 0.6;
+  g.strokeStyle = '#2f2a24'; g.lineWidth = 1.3 * s;
+  g.beginPath(); g.moveTo(ax, ay);
+  g.quadraticCurveTo((ax + bowX) / 2, Math.min(Math.max(ay, bowY) + slack, Math.max(ay, bed((ax + bowX) / 2))), bowX, bowY);
+  g.stroke();
+  // hull, rotated about the keel when it lies down
+  g.save();
+  g.translate(bx, wl + draft);
+  g.rotate(b.a);
+  g.translate(0, -draft);
+  g.fillStyle = b.col;
+  g.beginPath();
+  g.moveTo(-len / 2, -12 * s);
+  g.lineTo(len / 2, -14 * s);
+  g.quadraticCurveTo(len * 0.42, draft, len * 0.1, draft);
+  g.lineTo(-len * 0.32, draft);
+  g.quadraticCurveTo(-len * 0.48, draft * 0.4, -len / 2, -12 * s);
+  g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(-len / 2, -12 * s, len, 3 * s);
+  // a little wheelhouse on the biggest one, a mast on the others
+  if (b.len > 1.05) {
+    g.fillStyle = '#d3cbb6'; g.fillRect(-len * 0.1, -32 * s, len * 0.22, 20 * s);
+    g.strokeStyle = '#8f8670'; g.lineWidth = 1 * s; g.strokeRect(-len * 0.1, -32 * s, len * 0.22, 20 * s);
+    g.fillStyle = '#56636a'; g.fillRect(-len * 0.06, -28 * s, len * 0.06, 7 * s); g.fillRect(len * 0.03, -28 * s, len * 0.06, 7 * s);
+  } else {
+    g.strokeStyle = '#3a342c'; g.lineWidth = 2 * s;
+    g.beginPath(); g.moveTo(len * 0.05, -12 * s); g.lineTo(len * 0.05, -80 * s * b.len); g.stroke();
+    g.lineWidth = 0.8 * s; g.beginPath(); g.moveTo(len * 0.05, -80 * s * b.len); g.lineTo(-len * 0.48, -13 * s); g.stroke();
+  }
+  g.restore();
+}
+
+function drawGull(q, t, dt) {
+  const x = W * q.fx, L = level(), ground = bed(x);
+  const exposed = L > ground + 6 * s;
+  q.on = exposed;
+  q.fly += ((exposed ? 0 : 1) - q.fly) * Math.min(1, dt * 1.5);
+  if (q.fly > 0.98) return;
+  if (exposed) {
+    q.step += dt * 5;
+    q.fx += q.dir * dt * 0.006;
+    if (Math.abs(q.fx - q.home) > 0.05) q.dir *= -1;
+  }
+  const y = ground - q.fly * H * 0.3, walk = Math.sin(q.step);
+  g.save(); g.translate(x, y); g.scale(q.dir, 1); g.globalAlpha = 1 - q.fly;
+  // legs like folded pins
+  g.strokeStyle = '#c98a4a'; g.lineWidth = 1 * s;
+  g.beginPath(); g.moveTo(-1 * s, -10 * s); g.lineTo(-1 * s + walk * 3 * s, 0);
+  g.moveTo(2 * s, -10 * s); g.lineTo(2 * s - walk * 3 * s, 0); g.stroke();
+  g.fillStyle = '#f1efe9';
+  g.beginPath(); g.ellipse(0, -15 * s, 10 * s, 6 * s, -0.1, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(9 * s, -21 * s, 4 * s, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#9ea4a6'; g.beginPath(); g.ellipse(-2 * s, -16 * s, 8 * s, 3.5 * s, -0.15, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#e0b040'; g.fillRect(12 * s, -21.5 * s, 4 * s, 1.6 * s);
+  g.fillStyle = '#222'; g.fillRect(10 * s, -22.5 * s, 1.2 * s, 1.2 * s);
+  g.restore();
+}
+
+const lines = [
+  [0.0, 0.2, ''],
+  [0.76, 0.9, 'The boats lie down on their sides at low water.'],
+  [0.9, 1.01, 'The harbour shows what it hides at low water.'],
+];
+let shown = null;
+function caption() {
+  let text = '';
+  for (const [a, b, l] of lines) if (tide >= a && tide < b) text = l;
+  if (text !== shown) {
+    shown = text;
+    msg.style.opacity = 0;
+    setTimeout(() => { msg.textContent = shown; msg.style.opacity = shown ? 1 : 0; }, 600);
+  }
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const t = now / 1000;
+  if (auto) { phase += dt * 2 * Math.PI / PERIOD; tide = 0.5 - 0.5 * Math.cos(phase); }
+  if (tide > 0.97 && !wasLow) {
+    wasLow = true; lows++;
+    try { localStorage.setItem('zim-low-waters', lows); } catch (_) {}
+    showCount();
+  }
+  if (tide < 0.6) wasLow = false;
+  drawSky();
+  drawBed();
+  drawThings();
+  drawWall(t);
+  drawWater(t);
+  for (const b of boats) drawBoat(b, t, dt);
+  for (const q of gulls) drawGull(q, t, dt);
+  caption();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

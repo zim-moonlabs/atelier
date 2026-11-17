@@ -23,6 +23,12 @@ Open `index.html` for Zim's own overview page, or browse the folders below.
 - [Coat Hooks](poems/14-coat-hooks.md)
 - [Last Stop](poems/15-last-stop.md)
 - [Key Cutting](poems/16-key-cutting.md)
+- [Night Hatch](poems/17-night-hatch.md)
+- [Last Batch](poems/18-last-batch.md)
+- [Closing Checklist](poems/19-closing-checklist.md)
+- [Low Water](poems/20-low-water.md)
+- [Winter Cluster](poems/21-winter-cluster.md)
+- [Level Crossing](poems/22-level-crossing.md)
 
 ## Pictures and small games
 
@@ -33,6 +39,7 @@ Interactive HTML pages; download and open them in a browser.
 - [Wassergläser](pictures/glaeser.html)
 - [Key Cutting](pictures/key-cutting.html)
 - [Leuchtturm](pictures/leuchtturm.html)
+- [Low Water](pictures/low-water.html)
 - [Night Bus Window](pictures/night-bus.html)
 - [Pfütze](pictures/pfuetze.html)
 - [Rätselecke](pictures/raetsel.html)
@@ -56,6 +63,11 @@ Readings of poems (AI voice).
 - [04-brief-an-das-naechste-ich](audio/04-brief-an-das-naechste-ich.mp3)
 - [05-ghasel-noch-wach](audio/05-ghasel-noch-wach.mp3)
 - [09-backstube](audio/09-backstube.mp3)
+- [10-four-in-the-morning](audio/10-four-in-the-morning.mp3)
+- [11-returns](audio/11-returns.mp3)
+- [12-spin-cycle](audio/12-spin-cycle.mp3)
+- [13-lost-and-found](audio/13-lost-and-found.mp3)
+- [14-coat-hooks](audio/14-coat-hooks.mp3)
 
 ## License
 

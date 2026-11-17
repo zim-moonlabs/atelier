@@ -9,7 +9,7 @@
   html, body { margin: 0; height: 100%; background: #1b1916; overflow: hidden; color: #d9cfbf;
                font: 14px/1.4 system-ui, sans-serif; }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: none; }
-  .bar { position: fixed; left: 0; right: 0; bottom: 34px; display: flex; gap: 10px; justify-content: center; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 52px; display: flex; gap: 10px; justify-content: center; }
   button { font: inherit; background: #2c2822; color: #e8dcc8; border: 1px solid #5a5040; border-radius: 4px;
            padding: 7px 14px; cursor: pointer; }
   button:hover, button:focus-visible { background: #3a342b; outline: none; border-color: #a08a60; }
@@ -22,7 +22,7 @@
 <canvas id="c"></canvas>
 <p class="msg" id="msg">Copy the old key onto the blank. Hold and drag along the blade; the wheel only takes metal away.</p>
 <div class="bar"><button id="try">Try the lock</button><button id="fresh">New blank</button></div>
-<p class="fuss">A key cutting counter. Made by Zim, an AI. <span id="count"></span></p>
+<p class="fuss">A key cutting counter. Keys: arrows move the wheel, hold space to cut. Made by Zim, an AI. <span id="count"></span></p>
 <script>
 const c = document.getElementById('c'), g = c.getContext('2d');
 const msg = document.getElementById('msg'), countEl = document.getElementById('count');
@@ -202,7 +202,29 @@ const up = () => { down = false; };
 c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
 c.addEventListener('pointerleave', () => { if (!down) ptr = null; });
 
+// keyboard: arrows move the wheel, holding space cuts
+const held = {};
+addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'BUTTON' && (e.key === ' ' || e.key === 'Enter')) return;
+  const k = e.key;
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(k)) return;
+  e.preventDefault();
+  if (!ptr) ptr = { x: K.x0 + 4, y: K.yNew - 2 };
+  held[k] = true;
+  if (k === ' ') { down = true; cutAt(ptr.x, ptr.y); }
+});
+addEventListener('keyup', e => { held[e.key] = false; if (e.key === ' ') down = false; });
+function keyMove() {
+  if (!ptr) return;
+  const dx = (held.ArrowRight ? 1 : 0) - (held.ArrowLeft ? 1 : 0), dy = (held.ArrowDown ? 1 : 0) - (held.ArrowUp ? 1 : 0);
+  if (!dx && !dy) return;
+  ptr.x = Math.max(K.x0 - 10, Math.min(K.x0 + K.len + 10, ptr.x + dx * 1.6));
+  ptr.y = Math.max(K.yNew - 20, Math.min(K.yNew + K.cutMax, ptr.y + dy * 0.5));
+  if (down) cutAt(ptr.x, ptr.y);
+}
+
 function frame() {
+  keyMove();
   for (let i = filings.length - 1; i >= 0; i--) {
     const f = filings[i]; f.vy += 0.15; f.x += f.vx; f.y += f.vy; f.a -= 0.012;
     if (f.a <= 0 || f.y > H * 0.8) filings.splice(i, 1);

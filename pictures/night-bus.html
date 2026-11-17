@@ -18,7 +18,7 @@
 <script>
 const c = document.getElementById('c'), screen = c.getContext('2d');
 let W, H, dpr;
-let fog, fq, fogBase, grain, town, tq, small, tiny, view;
+let fog, fq, fogBase, grease, gq, grain, town, tq, small, tiny, view;
 let seed = 11;
 function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
 function mk(w, h) { const k = document.createElement('canvas'); k.width = Math.max(1, w); k.height = Math.max(1, h); return k; }
@@ -53,6 +53,12 @@ function resize() {
   fog = mk(W * dpr, H * dpr);
   fq = fog.getContext('2d'); fq.setTransform(dpr, 0, 0, dpr, 0, 0);
   fq.drawImage(fogBase, 0, 0, W, H);
+  // grease: where fingers have been, fog settles thinner; old marks show again as the glass fogs
+  grease = mk(W * dpr, H * dpr); gq = grease.getContext('2d'); gq.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ghosts();
+  fq.save(); fq.globalCompositeOperation = 'destination-out';
+  fq.drawImage(grease, 0, 0, W, H);
+  fq.restore();
   // tiny condensed drops, seen only where the glass is fogged
   grain = mk(W * dpr, H * dpr);
   const q = grain.getContext('2d'); q.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -158,6 +164,9 @@ function wipe(x, y, keepDrops) {
     fq.fillStyle = gr; fq.fillRect(px - r, py - r, 2 * r, 2 * r);
   }
   fq.restore();
+  // a finger leaves a trace the fog will find later
+  gq.strokeStyle = 'rgba(0,0,0,0.06)'; gq.lineCap = 'round'; gq.lineWidth = r * 0.9;
+  gq.beginPath(); gq.moveTo(from.x, from.y); gq.lineTo(x + 0.01, y); gq.stroke();
   if (!keepDrops && Math.random() < 0.1 && drops.length < 40)
     drops.push({ x: x + (Math.random() - 0.5) * r * 1.6, y: y + r * 0.7, v: 0, life: 0, pause: Math.random() * 40 });
   last = { x, y };
@@ -182,6 +191,35 @@ function drawDrops(g) {
     g.fillStyle = 'rgba(255,255,255,0.7)'; g.fillRect(d.x - 0.8, d.y - 1.2, 1, 1);
   }
 }
+// marks from earlier passengers, drawn with a finger some other night: a heart, a game of noughts and crosses, a face
+function ghosts() {
+  gq.strokeStyle = 'rgba(0,0,0,0.08)'; gq.lineCap = 'round'; gq.lineJoin = 'round';
+  gq.lineWidth = Math.max(7, Math.min(W, H) * 0.014);
+  const s = Math.min(W, H) * 0.07;
+  // heart, low on the left pane
+  let x = W * 0.16, y = H * 0.7;
+  gq.beginPath(); gq.moveTo(x, y + s * 0.7);
+  gq.bezierCurveTo(x - s * 1.1, y - s * 0.1, x - s * 0.5, y - s * 0.8, x, y - s * 0.2);
+  gq.bezierCurveTo(x + s * 0.5, y - s * 0.8, x + s * 1.1, y - s * 0.1, x, y + s * 0.7); gq.stroke();
+  // noughts and crosses, top middle, unfinished
+  x = W * 0.5; y = H * 0.2;
+  gq.beginPath();
+  gq.moveTo(x - s * 0.4, y - s * 1.1); gq.lineTo(x - s * 0.35, y + s * 1.1);
+  gq.moveTo(x + s * 0.4, y - s * 1.1); gq.lineTo(x + s * 0.45, y + s * 1.1);
+  gq.moveTo(x - s * 1.1, y - s * 0.35); gq.lineTo(x + s * 1.1, y - s * 0.4);
+  gq.moveTo(x - s * 1.1, y + s * 0.4); gq.lineTo(x + s * 1.1, y + s * 0.35);
+  gq.moveTo(x - s * 0.95, y - s * 0.95); gq.lineTo(x - s * 0.6, y - s * 0.6);
+  gq.moveTo(x - s * 0.6, y - s * 0.95); gq.lineTo(x - s * 0.95, y - s * 0.6);
+  gq.stroke();
+  gq.beginPath(); gq.arc(x + s * 0.02, y + s * 0.02, s * 0.2, 0, 6.283); gq.stroke();
+  // a face on the small pane, right of the pillar
+  x = W * 0.86; y = H * 0.62;
+  gq.beginPath(); gq.arc(x, y, s * 0.7, 0, 6.283); gq.stroke();
+  gq.beginPath(); gq.arc(x, y + s * 0.05, s * 0.38, 0.4, 2.74); gq.stroke();
+  gq.fillStyle = 'rgba(0,0,0,0.08)';
+  for (const ex of [-0.24, 0.24]) { gq.beginPath(); gq.arc(x + s * ex, y - s * 0.2, gq.lineWidth * 0.5, 0, 6.283); gq.fill(); }
+}
+
 // one patch someone wiped before you, as a hint
 function hint() {
   const cx = W * 0.36, cy = H * 0.42, rx = Math.min(W * 0.13, 150);
@@ -234,7 +272,9 @@ function frame(now) {
 
   // breath and warmth: the fog creeps back
   regrow += dt;
-  if (regrow > 0.1) { fq.save(); fq.globalAlpha = speed < 0.1 ? 0.014 : 0.008; fq.drawImage(fogBase, 0, 0, W, H); fq.restore(); regrow = 0; }
+  if (regrow > 0.1) { fq.save(); fq.globalAlpha = speed < 0.1 ? 0.014 : 0.008; fq.drawImage(fogBase, 0, 0, W, H);
+    fq.globalCompositeOperation = 'destination-out'; fq.globalAlpha = 0.03; fq.drawImage(grease, 0, 0, W, H);
+    fq.restore(); regrow = 0; }
   runDrops();
 
   screen.setTransform(1, 0, 0, 1, 0, 0);
