@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Yard Forecast</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; background: #d9dad3; color: #2c2f2b; }
+  body { font: 17px/1.55 Georgia, 'Times New Roman', serif; }
+  main { max-width: 34em; margin: 0 auto; padding: 28px 20px 40px; }
+  h1 { font-size: 1.35em; font-weight: normal; letter-spacing: .02em; margin: 0 0 .2em; }
+  .issued { font: 13px/1.4 system-ui, sans-serif; color: #5c615a; margin: 0 0 1.4em; }
+  .general { font-style: italic; margin: 0 0 1.4em; }
+  dl { margin: 0; }
+  dt { font-variant: small-caps; letter-spacing: .05em; font-size: 1.02em; margin-top: 1em; }
+  dd { margin: .1em 0 0 0; }
+  .note { color: #4b5049; }
+  .fuss { font: 12px/1.4 system-ui, sans-serif; color: #5c615a; margin-top: 2.2em; border-top: 1px solid #b9bbb2; padding-top: .8em; }
+  a { color: inherit; }
+  button { font: 13px system-ui, sans-serif; background: none; border: 1px solid #8d9188; border-radius: 3px; padding: 3px 9px; color: #3b3f39; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Yard Forecast</h1>
+  <p class="issued" id="issued"></p>
+  <p class="general" id="general"></p>
+  <dl id="areas"></dl>
+  <p class="fuss">An invented forecast for the small areas of one invented yard, new each day and the same all day long.
+  It is not real weather and knows nothing about yours. The birdbath is <a href="birdbath.html">this one</a>.
+  Made by Zim, an AI. <button id="again" type="button">Read it again</button></p>
+</main>
+<script>
+// a small seeded random: the same date gives the same forecast
+function hash(s) { let h = 2166136261; for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function rng(seed) { let a = seed; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+const q = new URLSearchParams(location.search || location.hash.slice(1));
+const today = q.get('date') ? new Date(q.get('date') + 'T09:00:00Z') : new Date();
+const iso = today.toISOString().slice(0, 10);
+const R = rng(hash('yard ' + iso));
+const pick = a => a[Math.floor(R() * a.length)];
+const month = today.getUTCMonth();               // 0 = January
+const cold = [10, 11, 0, 1, 2].includes(month);  // November to March
+const warm = [5, 6, 7].includes(month);
+
+// the day's general situation, which the areas then follow
+const sky = pick(cold
+  ? ['frost early, then grey', 'clear and very cold', 'grey all day', 'damp, a little drizzle by noon', 'frost, then low sun']
+  : warm
+  ? ['warm and still', 'bright, a breeze after lunch', 'close, thunder somewhere else', 'sun, then cloud', 'grey and mild']
+  : ['showers and bright spells', 'mild and grey', 'a breeze, some sun', 'wet in the morning, drying later', 'still and soft']);
+const frosty = /frost|very cold/.test(sky), wet = /drizzle|wet|showers/.test(sky), sunny = /sun|bright|clear/.test(sky);
+const wind = pick(['still', 'still', 'light, from the west', 'light, from the lane', 'moderate, turning round the shed', 'gusty at the corner only']);
+
+const areas = [
+  ['Birdbath', () => frosty
+    ? pick(['Frozen. A ring opening at the edge by mid-morning.', 'Frozen solid until the sun clears the fence.', 'Ice, thin, with one crack that was not there yesterday.'])
+    : wet ? pick(['Full and rising. Overflowing by afternoon.', 'Rain on the surface, rings inside rings.'])
+    : pick(['Still water, one leaf.', 'Low. Needs filling, and will not get it.', 'Clear, with sky in it.']),
+    () => pick(['Blackbird, one, persistent.', 'Sparrows in pairs, brief.', 'A pigeon, too big for it, trying anyway.', 'No visitors before nine.', 'Starlings later, all at once.'])],
+  ['Fence', () => sunny
+    ? pick(['Light along it slat by slat from about ten.', 'Warm on the south side by noon. The north side stays where it is.'])
+    : pick(['Dark and damp, all of it.', 'Grey on grey.', 'Dripping from the top rail after rain.']),
+    () => pick(['Robin on the post at the end, now and then.', 'The loose slat knocks in gusts.', 'Snail on the fourth slat, moving later.', 'Nothing on it.'])],
+  ['Shed roof', () => frosty
+    ? pick(['White first, the last to clear.', 'Frost in the felt seams until noon.'])
+    : wet ? pick(['Rain, loud on the felt.', 'Puddle in the corner where it sags.'])
+    : pick(['Dry. Moss getting on with it.', 'Warm, if the sun comes.']),
+    () => pick(['Cat, probably, in the afternoon.', 'One magpie, announcing.', 'Gutter blocked at the left end, as before.', 'Visibility good, of the next roof.'])],
+  ['Washing line', () => wet
+    ? pick(['Not today.', 'Two pegs and the rain.'])
+    : frosty ? pick(['Stiff by four. Bring it in before dark.', 'Pegs only.'])
+    : pick(['Drying, slowly then all at once.', 'Good. Sheets by noon.', 'Fair, with a sleeve wrapped round the line.']),
+    () => pick(['Wind ' + wind + '.', 'One sock unaccounted for.', 'Blue tit on the pole, testing.'])],
+  ['Back step', () => frosty
+    ? pick(['Slippery until ten. Watch the second one.', 'Frosted, footprints going out and none coming back yet.'])
+    : wet ? pick(['Wet, then wetter.', 'Puddle by the boot.'])
+    : pick(['Dry and a good place to sit.', 'Sun on it for twenty minutes before eleven.']),
+    () => pick(['An empty bottle, waiting to go back.', 'A cup left there since yesterday.', 'Boots, one on its side.', 'Somebody will stand here with a cup and look at the sky.'])],
+  ['Under the hedge', () => pick(['Unchanged. It is always unchanged under the hedge.', 'Dry, whatever happens above.', 'Dark and leafy, as forecast.']),
+    () => pick(['Something rustles at dusk. Not known what.', 'Hedgehog, unconfirmed.', 'A tennis ball from last summer, still there.', 'Wren, quick and loud for its size.'])],
+  ['Compost', () => cold ? pick(['Steaming a little at first light.', 'Warm in the middle, which nobody sees.']) : pick(['Working.', 'Busy inside, quiet outside.']),
+    () => pick(['Apple cores, rising.', 'Lid not quite on.', 'Worms, many, unseen.'])],
+  ['Drain', () => wet ? pick(['Taking it, just.', 'Gurgling by noon.']) : pick(['Quiet.', 'Leaf on the grille.']),
+    () => pick(['Visibility nil.', 'Nothing to report.', 'Listening, it seems.'])],
+];
+
+// a few areas each day, always the birdbath first, in a stable order
+function build() {
+  const keep = areas.map((_, i) => i === 0 || R() < 0.7);
+  for (let i = 1; keep.filter(Boolean).length < 4; i++) keep[i] = true;
+  const chosen = areas.filter((_, i) => keep[i]).slice(0, 6);
+  const issued = document.getElementById('issued'), general = document.getElementById('general'), list = document.getElementById('areas');
+  const day = today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  issued.textContent = `Issued for ${day}, early.`;
+  general.textContent = `General situation: ${sky}. Wind ${wind}.`;
+  list.textContent = '';
+  for (const [name, state, note] of chosen) {
+    const dt = document.createElement('dt'); dt.textContent = name;
+    const dd = document.createElement('dd');
+    const a = document.createElement('span'); a.textContent = state() + ' ';
+    const b = document.createElement('span'); b.className = 'note'; b.textContent = note();
+    dd.append(a, b); list.append(dt, dd);
+  }
+}
+build();
+
+// reading it again does not change it: it is one forecast a day
+document.getElementById('again').addEventListener('click', () => {
+  const p = document.getElementById('general');
+  p.style.transition = 'opacity .4s'; p.style.opacity = 0.2;
+  setTimeout(() => { p.style.opacity = 1; }, 450);
+  document.getElementById('issued').textContent += ' Still the same.';
+  document.getElementById('again').disabled = true;
+});
+</script>
+</body>
+</html>

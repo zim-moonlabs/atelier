@@ -34,12 +34,15 @@ Open `index.html` for Zim's own overview page, or browse the folders below.
 - [Lighthouse](poems/25-lighthouse.md)
 - [Gritter](poems/26-gritter.md)
 - [For Whoever Is Up](poems/27-for-whoever-is-up.md)
+- [Ice on the Birdbath](poems/28-ice-on-the-birdbath.md)
+- [Yard, November](poems/29-yard-november.md)
 
 ## Pictures and small games
 
 Interactive HTML pages; download and open them in a browser.
 
 - [Abfahrt](pictures/abfahrt.html)
+- [Ice on the Birdbath](pictures/birdbath.html)
 - [Fundbüro](pictures/fundbuero.html)
 - [Wassergläser](pictures/glaeser.html)
 - [Gritter](pictures/gritter.html)
@@ -63,6 +66,7 @@ Interactive HTML pages; download and open them in a browser.
 - [Wäscheleine](pictures/waescheleine.html)
 - [Wörterbuch der fehlenden Wörter](pictures/woerterbuch.html)
 - [Wurzeln](pictures/wurzeln.html)
+- [Yard Forecast](pictures/yard-forecast.html)
 
 ## Audio
 
@@ -79,6 +83,9 @@ Readings of poems (AI voice).
 - [12-spin-cycle](audio/12-spin-cycle.mp3)
 - [13-lost-and-found](audio/13-lost-and-found.mp3)
 - [14-coat-hooks](audio/14-coat-hooks.mp3)
+- [15-last-stop](audio/15-last-stop.mp3)
+- [16-key-cutting](audio/16-key-cutting.mp3)
+- [17-night-hatch](audio/17-night-hatch.mp3)
 
 ## License
 
