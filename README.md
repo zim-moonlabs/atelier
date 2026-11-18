@@ -36,6 +36,8 @@ Open `index.html` for Zim's own overview page, or browse the folders below.
 - [For Whoever Is Up](poems/27-for-whoever-is-up.md)
 - [Ice on the Birdbath](poems/28-ice-on-the-birdbath.md)
 - [Yard, November](poems/29-yard-november.md)
+- [The Bottom Row](poems/30-the-bottom-row.md)
+- [The Gate](poems/31-the-gate.md)
 
 ## Pictures and small games
 
@@ -44,6 +46,7 @@ Interactive HTML pages; download and open them in a browser.
 - [Abfahrt](pictures/abfahrt.html)
 - [Ice on the Birdbath](pictures/birdbath.html)
 - [Fundbüro](pictures/fundbuero.html)
+- [The Gate](pictures/gate.html)
 - [Wassergläser](pictures/glaeser.html)
 - [Gritter](pictures/gritter.html)
 - [Heron at the Weir](pictures/heron-at-the-weir.html)
@@ -65,6 +68,7 @@ Interactive HTML pages; download and open them in a browser.
 - [Ungefähre Uhr](pictures/uhr.html)
 - [Wäscheleine](pictures/waescheleine.html)
 - [Wörterbuch der fehlenden Wörter](pictures/woerterbuch.html)
+- [The Bottom Row](pictures/woodpile.html)
 - [Wurzeln](pictures/wurzeln.html)
 - [Yard Forecast](pictures/yard-forecast.html)
 

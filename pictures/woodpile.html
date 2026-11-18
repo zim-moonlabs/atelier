@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Bottom Row</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #2b3446; overflow: hidden; color: #e8e2d4;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: manipulation; }
+  .msg { position: fixed; left: 0; right: 0; top: 14px; text-align: center; color: #f1e9d6; min-height: 1.4em;
+         pointer-events: none; font: italic 16px/1.4 Georgia, serif; transition: opacity 1.5s; padding: 0 12px;
+         text-shadow: 0 0 4px #0008; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #d9d3c4;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; padding: 0 8px; text-shadow: 0 0 3px #000a; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A woodpile against a shed at dusk, through one winter. Each evening one log is taken off the top and carried to the house, where a window glows. The pile goes down row by row until only the bottom row is left on its pallets, grey and soft, with moss starting on it. Then it is stacked again on the same bottom row."></canvas>
+<p class="msg" id="msg"></p>
+<p class="fuss">A woodpile, one winter after another. Tap to take tonight's log. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), countEl = document.getElementById('count');
+let W, H, dpr, u;
+let winters = 0;
+try { winters = +localStorage.getItem('zim-woodpile-winters') || 0; } catch (_) {}
+function showCount() { countEl.textContent = winters ? `Winters watched: ${winters}.` : ''; }
+showCount();
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight; u = Math.min(W, H) / 100;
+  c.width = W * dpr; c.height = H * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+let lastMsg = '';
+function say(s) {
+  if (s === lastMsg) return;
+  lastMsg = s; msg.style.opacity = 0;
+  setTimeout(() => { msg.textContent = s; msg.style.opacity = 1; }, 400);
+}
+
+// a small seeded random so each log keeps its look
+let seed = 7;
+function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+
+const COLS = 14, ROWS = 10;           // row 0 is the bottom row
+const logs = [];                      // logs[r][i] = {tone, rings, gone}
+for (let r = 0; r < ROWS; r++) {
+  const row = [], n = r % 2 ? COLS - 1 : COLS;
+  for (let i = 0; i < n; i++) row.push({ tone: rnd(), rings: 2 + Math.floor(rnd() * 3), crack: rnd() < 0.3, gone: false });
+  logs.push(row);
+}
+const takeable = logs.slice(1).reduce((s, row) => s + row.length, 0); // everything above the bottom row
+const START = Date.UTC(2026, 9, 28);  // 28 October
+const EVENING = 900;                // ms per evening
+
+let evening = 0;          // logs taken this winter
+let carry = null;         // {x, y, t, tone, rings}
+let phase = 'winter';     // winter | march | restack
+let phaseT = 0, glow = 0, lastT = null, sinceLog = 0;
+let lice = [];
+for (let i = 0; i < 5; i++) lice.push({ x: rnd(), dir: rnd() < 0.5 ? -1 : 1, v: 0.02 + rnd() * 0.03 });
+const stars = [];
+for (let i = 0; i < 40; i++) stars.push({ x: rnd(), y: rnd(), b: rnd(), at: rnd() });
+const mossBase =() => Math.min(0.75, winters * 0.15);
+
+function geom() {
+  const r = Math.min(W / (COLS * 2 + 10), H * 0.5 / (ROWS * 1.75 + 4)) ;
+  const ground = H * 0.8;
+  const px = Math.max(W * 0.12, W * 0.5 - COLS * r - r * 4);
+  return { r, ground, px, pallet: r * 1.1 };
+}
+function logPos(G, row, i) {
+  const off = row % 2 ? G.r : 0;
+  return { x: G.px + off + G.r + i * G.r * 2, y: G.ground - G.pallet - G.r - row * G.r * 1.74 };
+}
+function topLog() {
+  for (let r = ROWS - 1; r >= 1; r--) {
+    const row = logs[r];
+    for (let i = row.length - 1; i >= 0; i--) if (!row[i].gone) return [r, i];
+  }
+  return null;
+}
+function remainingHeight() {
+  for (let r = ROWS - 1; r >= 0; r--) if (logs[r].some(l => !l.gone)) return r;
+  return 0;
+}
+function dateText(n) {
+  const d = new Date(START + n * 86400000);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+}
+
+function takeLog() {
+  if (phase !== 'winter' || carry) return false;
+  const t = topLog();
+  if (!t) return false;
+  const [r, i] = t, G = geom(), p = logPos(G, r, i), L = logs[r][i];
+  L.gone = true;
+  carry = { x: p.x, y: p.y, x0: p.x, y0: p.y, t: 0, tone: L.tone, rings: L.rings };
+  evening++; sinceLog = 0;
+  captionFor();
+  if (!topLog()) { phase = 'march'; phaseT = 0; }
+  return true;
+}
+function captionFor() {
+  const h = remainingHeight();
+  if (evening === 1) say('Late October. The pile is shoulder-high.');
+  else if (h === 6 && evening < takeable / 2) say('Now it reaches where a hand would rest.');
+  else if (h === 4) say('The middle row waits.');
+  else if (h === 2) say('The bottom row has the woodlice, a slug asleep in a split.');
+}
+
+c.addEventListener('pointerdown', () => {
+  if (!takeLog() && phase === 'restack') phaseT = Math.max(phaseT, 5000);
+});
+
+function step(dt) {
+  phaseT += dt; sinceLog += dt;
+  glow = Math.max(0, glow - dt / 2500);
+  if (carry) {
+    carry.t += dt / 800;
+    if (carry.t >= 1) { carry = null; glow = 1; }
+  }
+  if (phase === 'winter') {
+    if (sinceLog > EVENING && !carry) takeLog();
+  } else if (phase === 'march') {
+    if (phaseT > 400 && phaseT < 4500) say('March. One row left, and it will stay.');
+    else if (phaseT >= 4500) say('Grey and soft, and moss starting on it.');
+    if (phaseT > 8500 && !carry) {
+      phase = 'restack'; phaseT = 0;
+      winters++; try { localStorage.setItem('zim-woodpile-winters', winters); } catch (_) {}
+      showCount();
+      say('To be the floor the others left from.');
+    }
+  } else if (phase === 'restack') {
+    // the pile is built again on the same bottom row, one row at a time
+    if (phaseT > 4000) {
+      const rowsBack = Math.min(ROWS - 1, Math.floor((phaseT - 4000) / 450));
+      for (let r = 1; r <= rowsBack; r++) logs[r].forEach(l => l.gone = false);
+      if (rowsBack === ROWS - 1) { phase = 'winter'; phaseT = 0; evening = 0; sinceLog = -1500; lastMsg = ''; say('October again. Stacked high on the same row.'); }
+    }
+  }
+  for (const L of lice) {
+    L.x += L.dir * L.v * dt / 1000;
+    if (L.x < 0.02 || L.x > 0.98) L.dir *= -1;
+  }
+}
+
+function season() { // 0 = late October, 1 = March
+  return phase === 'winter' ? evening / takeable : phase === 'march' ? 1 : Math.max(0, 1 - phaseT / 6000);
+}
+
+function drawLog(x, y, r, tone, rings, crack, moss, grey) {
+  const base = [150 + tone * 40, 108 + tone * 30, 70 + tone * 20];
+  const m = grey * 0.7, k = 1 - m;
+  const gr = [base[0] * k + 128 * m, base[1] * k + 122 * m, base[2] * k + 110 * m];
+  g.fillStyle = '#3b2c20';
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();          // bark
+  g.fillStyle = `rgb(${gr.map(Math.round)})`;
+  g.beginPath(); g.arc(x, y, r * 0.84, 0, Math.PI * 2); g.fill();   // end grain
+  g.strokeStyle = 'rgba(70,45,25,0.35)'; g.lineWidth = Math.max(0.6, r * 0.06);
+  for (let k2 = 1; k2 <= rings; k2++) { g.beginPath(); g.arc(x + r * 0.08, y - r * 0.05, r * 0.84 * k2 / (rings + 1), 0, Math.PI * 2); g.stroke(); }
+  if (crack) { g.beginPath(); g.moveTo(x, y); g.lineTo(x + r * 0.8, y + r * 0.2); g.stroke(); }
+  if (moss > 0.02) {
+    g.fillStyle = `rgba(92,128,58,${Math.min(0.85, moss)})`;
+    g.beginPath(); g.arc(x, y + r * 0.2, r * (0.5 + moss * 0.5), Math.PI * 0.1, Math.PI * 0.9); g.fill();
+  }
+}
+
+function draw() {
+  const G = geom(), s = season();
+  // dusk sky, colder as the winter goes on
+  const sky = g.createLinearGradient(0, 0, 0, G.ground);
+  sky.addColorStop(0, `rgb(${30 - s * 8},${40 - s * 6},${70 - s * 4})`);
+  sky.addColorStop(0.75, `rgb(${120 - s * 30},${92 - s * 18},${100 - s * 10})`);
+  sky.addColorStop(1, `rgb(${196 - s * 40},${140 - s * 30},${100 - s * 10})`);
+  g.fillStyle = sky; g.fillRect(0, 0, W, G.ground);
+  // a few stars, more of them as the evenings get colder, and a low moon
+  for (const st of stars) {
+    if (st.at > 0.25 + s * 0.75) continue;
+    g.fillStyle = `rgba(240,236,220,${0.35 + st.b * 0.5})`;
+    g.fillRect(st.x * W, st.y * G.ground * 0.55, st.b > 0.8 ? 2 : 1.3, st.b > 0.8 ? 2 : 1.3);
+  }
+  const mx = W * (0.2 + s * 0.15), my = G.ground * 0.22, mr = Math.max(6, u * 2.4);
+  g.fillStyle = 'rgba(238,230,205,0.9)'; g.beginPath(); g.arc(mx, my, mr, 0, Math.PI * 2); g.fill();
+  g.fillStyle = sky; g.beginPath(); g.arc(mx + mr * 0.45, my - mr * 0.15, mr * 0.9, 0, Math.PI * 2); g.fill();
+  // fence
+  g.fillStyle = '#3a3430';
+  const slat = Math.max(8, u * 3.2);
+  for (let x = 0; x < W; x += slat * 1.15) g.fillRect(x, G.ground - H * 0.32, slat, H * 0.32);
+  g.fillStyle = '#2f2a27'; g.fillRect(0, G.ground - H * 0.27, W, slat * 0.5); g.fillRect(0, G.ground - H * 0.09, W, slat * 0.5);
+  // shed wall behind the pile
+  const shedL = G.px - G.r * 3, shedR = G.px + COLS * G.r * 2 + G.r * 3;
+  const shedTop = G.ground - G.pallet - ROWS * G.r * 1.74 - G.r * 5;
+  g.fillStyle = '#4a4038'; g.fillRect(shedL, shedTop, shedR - shedL, G.ground - shedTop);
+  g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 1;
+  for (let x = shedL; x < shedR; x += G.r * 2.6) { g.beginPath(); g.moveTo(x, shedTop); g.lineTo(x, G.ground); g.stroke(); }
+  g.fillStyle = '#2e2622';
+  g.beginPath(); g.moveTo(shedL - G.r, shedTop); g.lineTo(shedR + G.r, shedTop); g.lineTo(shedR, shedTop - G.r * 2.5); g.lineTo(shedL, shedTop - G.r * 2.5); g.fill();
+  // house edge on the right, with the stove window
+  const hx = W - Math.max(W * 0.1, u * 9);
+  g.fillStyle = '#3d3734'; g.fillRect(hx, G.ground - H * 0.62, W - hx, H * 0.62);
+  const wx = hx + (W - hx) * 0.22, ww = (W - hx) * 0.56, wy = G.ground - H * 0.42, wh = H * 0.14;
+  const lum = 0.55 + glow * 0.45;
+  g.fillStyle = `rgb(${Math.round(230 * lum)},${Math.round(160 * lum)},${Math.round(80 * lum)})`;
+  g.fillRect(wx, wy, ww, wh);
+  g.strokeStyle = '#2a2420'; g.lineWidth = Math.max(2, u * 0.5);
+  g.strokeRect(wx, wy, ww, wh); g.beginPath(); g.moveTo(wx + ww / 2, wy); g.lineTo(wx + ww / 2, wy + wh); g.stroke();
+  if (glow > 0) {
+    const R = Math.max(ww, wh) * 1.6, rg = g.createRadialGradient(wx + ww / 2, wy + wh / 2, 0, wx + ww / 2, wy + wh / 2, R);
+    rg.addColorStop(0, `rgba(240,170,90,${glow * 0.22})`); rg.addColorStop(1, 'rgba(240,170,90,0)');
+    g.fillStyle = rg; g.fillRect(wx + ww / 2 - R, wy + wh / 2 - R, R * 2, R * 2);
+  }
+  // ground
+  g.fillStyle = `rgb(${54 - s * 6},${52 - s * 4},${44})`; g.fillRect(0, G.ground, W, H - G.ground);
+  // pallets
+  const pl = G.px - G.r * 0.3, pr = G.px + COLS * G.r * 2 + G.r * 0.3;
+  g.fillStyle = '#6b5e4b';
+  g.fillRect(pl, G.ground - G.pallet, pr - pl, G.pallet * 0.3);
+  for (let i = 0; i <= 6; i++) g.fillRect(pl + (pr - pl - G.r) * i / 6, G.ground - G.pallet * 0.75, G.r, G.pallet * 0.75);
+  // logs
+  const moss = Math.min(0.85, mossBase() + 0.1 + s * 0.45);
+  for (let r = 0; r < ROWS; r++) logs[r].forEach((L, i) => {
+    if (L.gone) return;
+    const p = logPos(G, r, i);
+    drawLog(p.x, p.y, G.r, L.tone, L.rings, L.crack, r === 0 ? moss * (0.6 + L.tone * 0.6) : 0, r === 0 ? Math.min(1, 0.65 + moss * 0.5) : 0);
+  });
+  // woodlice along the bottom row, only once the pile is low enough to see them
+  if (remainingHeight() <= 3) {
+    g.fillStyle = '#9a9a92';
+    const y0 = logPos(G, 0, 0).y + G.r * 0.95;
+    for (const L of lice) {
+      const x = G.px + L.x * COLS * G.r * 2;
+      g.beginPath(); g.ellipse(x, y0, Math.max(1.5, G.r * 0.16), Math.max(1, G.r * 0.09), 0, 0, Math.PI * 2); g.fill();
+    }
+  }
+  // tarp over the top of what is left
+  const h = remainingHeight();
+  if (h >= 1) {
+    const y = logPos(G, h, 0).y, r = G.r, T = y - r * 1.25;
+    const L = G.px - r * 0.7, R = G.px + COLS * r * 2 + r * 0.7;
+    g.fillStyle = '#2e463a';
+    g.beginPath();
+    g.moveTo(L, y + r * 1.9);
+    g.lineTo(L + r * 0.15, T + r * 0.6);
+    g.quadraticCurveTo(L + r * 0.3, T, L + r * 1.2, T);
+    g.quadraticCurveTo((L + R) / 2, T - r * 0.35, R - r * 1.2, T);
+    g.quadraticCurveTo(R - r * 0.3, T, R - r * 0.15, T + r * 0.6);
+    g.lineTo(R, y + r * 2.2);
+    g.lineTo(R - r * 0.9, y + r * 1.3);
+    g.quadraticCurveTo((L + R) / 2, y + r * 0.1, L + r * 0.9, y + r * 1.2);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = Math.max(1, r * 0.08);
+    g.beginPath(); g.moveTo(L + r * 3, T + r * 0.1); g.quadraticCurveTo(L + r * 3.6, y, L + r * 3.2, y + r * 0.6); g.stroke();
+    g.beginPath(); g.moveTo(R - r * 4, T + r * 0.05); g.quadraticCurveTo(R - r * 4.6, y, R - r * 4.1, y + r * 0.5); g.stroke();
+  }
+  // the log on its way to the stove
+  if (carry) {
+    const t = carry.t, e = t * t * (3 - 2 * t);
+    const tx = wx + ww / 2, ty = G.ground - G.r;
+    const x = carry.x0 + (tx - carry.x0) * e, y = carry.y0 + (ty - carry.y0) * e - Math.sin(Math.PI * t) * H * 0.08;
+    g.globalAlpha = Math.min(1, (1 - t) * 4);
+    drawLog(x, y, G.r, carry.tone, carry.rings, false, 0, 0);
+    g.globalAlpha = 1;
+  }
+  // date
+  g.fillStyle = 'rgba(235,228,212,0.8)';
+  g.font = `${Math.max(11, u * 2.2)}px Georgia, serif`; g.textAlign = 'left';
+  const label = phase === 'winter' ? `Evening of ${dateText(evening)}` : phase === 'march' ? 'March' : 'October';
+  g.fillText(label, Math.max(12, u * 3), G.ground + Math.max(28, (H - G.ground) * 0.45));
+}
+
+function frame(t) {
+  if (lastT === null) lastT = t;
+  const dt = Math.min(100, t - lastT); lastT = t;
+  step(dt); draw();
+  requestAnimationFrame(frame);
+}
+// for checking: #evening=N starts the winter N logs in
+const jump = /evening=(\d+)/.exec(location.hash);
+if (jump) for (let n = Math.min(+jump[1], takeable); n > 0; n--) { takeLog(); carry = null; }
+requestAnimationFrame(frame);
+if (!jump) say('Every evening one log comes off the top.');
+
+window.__woodpile = {
+  phase: () => phase, evening: () => evening, takeable: () => takeable, winters: () => winters,
+  height: remainingHeight, take: takeLog,
+};
+</script>
+</body>
+</html>

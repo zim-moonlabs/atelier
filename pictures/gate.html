@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Gate</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #10141e; overflow: hidden; color: #e3dfd2;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: manipulation; }
+  .msg { position: fixed; left: 0; right: 0; top: 14px; text-align: center; color: #ece6d4; min-height: 1.4em;
+         pointer-events: none; font: italic 16px/1.4 Georgia, serif; transition: opacity 1.5s; padding: 0 12px;
+         text-shadow: 0 0 4px #000a; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #c9c4b6;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; padding: 0 8px; text-shadow: 0 0 3px #000a; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A garden gate at night in a small yard. The wind works the old latch loose and the gate knocks against its post. A torch comes out from the back door, crosses the yard, latches the gate and wedges it with half a brick, and goes back in. Later the brick shifts and it happens again, until it gets light."></canvas>
+<p class="msg" id="msg"></p>
+<p class="fuss">A gate in the wind, one night after another. Tap to go out and latch it. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), countEl = document.getElementById('count');
+let W, H, dpr, u;
+let nights = 0, outings = 0;
+try {
+  nights = +localStorage.getItem('zim-gate-nights') || 0;
+  outings = +localStorage.getItem('zim-gate-outings') || 0;
+} catch (_) {}
+function showCount() {
+  countEl.textContent = nights || outings ? `Nights: ${nights}. Times someone went out: ${outings}.` : '';
+}
+showCount();
+function store() {
+  try { localStorage.setItem('zim-gate-nights', nights); localStorage.setItem('zim-gate-outings', outings); } catch (_) {}
+}
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight; u = Math.min(W, H) / 100;
+  c.width = W * dpr; c.height = H * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+let lastMsg = '';
+function say(s) {
+  if (s === lastMsg) return;
+  lastMsg = s; msg.style.opacity = 0;
+  setTimeout(() => { msg.textContent = s; msg.style.opacity = 1; }, 400);
+}
+
+let seed = 11;
+function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+const stars = [];
+for (let i = 0; i < 60; i++) stars.push({ x: rnd(), y: rnd(), b: rnd() });
+
+const NIGHT = 100000;            // 23:00 to 06:40 in 100 seconds
+let clock = 0;                   // ms into the night
+let latched = true, hold = 0.6;  // how well the brick holds, 0..1
+let angle = 0, vel = 0;          // gate opening angle (radians) and its speed
+let knocks = [], knockCount = 0, sinceLoose = 0;
+let walker = null;               // {t, dir: 1 out / -1 back}
+let windT = 0, gust = 0, lastT = null, dawnSaid = false, fiveSaid = false;
+
+function hhmm() {
+  const m = Math.floor(23 * 60 + clock / NIGHT * 460) % (24 * 60);
+  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+}
+function light() { return Math.max(0, (clock / NIGHT - 0.8) / 0.2); } // 0 dark, 1 grey morning
+
+function goOut(byTap) {
+  if (walker || latched) return false;
+  walker = { t: 0, dir: 1 };
+  outings++; store(); showCount();
+  say(byTap ? 'You get up and go and make it right.' : 'Someone gets up and goes and makes it right.');
+  return true;
+}
+c.addEventListener('pointerdown', () => {
+  if (!goOut(true) && latched && !walker) say('It holds, for now.');
+});
+
+function step(dt) {
+  clock += dt; windT += dt / 1000;
+  // gusts: slow swell plus sudden pushes
+  gust = Math.max(0, Math.sin(windT * 0.7) * 0.5 + Math.sin(windT * 1.9 + 1) * 0.35 + Math.sin(windT * 4.3) * 0.15);
+  if (latched) {
+    hold -= dt / 1000 * gust * 0.12;
+    if (hold <= 0) { latched = false; sinceLoose = 0; say('The gate will not stay latched all through the night.'); }
+  } else {
+    sinceLoose += dt;
+    const target = Math.max(0, gust * 1.8 - 0.15);
+    const before = angle;
+    vel += ((target - angle) * 9 - vel * 1.6) * dt / 1000;
+    angle += vel * dt / 1000;
+    if (angle < 0) {
+      if (vel < -0.25) { knocks.push({ t: 0, s: Math.min(1, -vel / 1.5) }); knockCount++; if (knockCount % 4 === 1) say('A knock, the iron working in the cold.'); }
+      angle = 0; vel = -vel * 0.25;
+    }
+    if (angle > 1.25) { angle = 1.25; vel = 0; }
+    if (!walker && sinceLoose > 12000) goOut(false); // nobody sleeps through it for long
+  }
+  for (const k of knocks) k.t += dt / 900;
+  knocks = knocks.filter(k => k.t < 1);
+  if (walker) {
+    walker.t += dt / 3000;
+    if (walker.dir === 1 && walker.t >= 1) {
+      walker.t = 0; walker.dir = 0; // at the gate
+    } else if (walker.dir === 0) {
+      angle *= Math.pow(0.02, dt / 1000); vel = 0;
+      if (walker.t > 0.5) {
+        angle = 0; latched = true; hold = 0.7 + rnd() * 0.3;
+        say('Half a brick, going green with mould.');
+        walker.t = 0; walker.dir = -1;
+      }
+    } else if (walker.dir === -1 && walker.t >= 1) walker = null;
+  }
+  if (!fiveSaid && clock / NIGHT > 0.78) { fiveSaid = true; if (latched && !walker) say('Some time near five, before it is light, the brick will shift.'); hold = Math.min(hold, 0.08); }
+  if (!dawnSaid && clock / NIGHT > 0.93) { dawnSaid = true; say('It isn\'t mending. Mending would be new hinges and a Saturday.'); }
+  if (clock >= NIGHT && !walker) {
+    nights++; store(); showCount();
+    clock = 0; fiveSaid = dawnSaid = false; latched = true; angle = 0; vel = 0; hold = 0.5 + rnd() * 0.4;
+    say('Another night. The latch is getting old.');
+  }
+}
+
+function draw() {
+  const L = light();
+  const ground = H * 0.78;
+  const sky = g.createLinearGradient(0, 0, 0, ground);
+  sky.addColorStop(0, `rgb(${12 + L * 70},${16 + L * 74},${30 + L * 80})`);
+  sky.addColorStop(1, `rgb(${30 + L * 110},${34 + L * 104},${52 + L * 96})`);
+  g.fillStyle = sky; g.fillRect(0, 0, W, ground);
+  for (const s of stars) {
+    const a = (0.3 + s.b * 0.6) * (1 - L);
+    if (a < 0.03) continue;
+    g.fillStyle = `rgba(235,232,220,${a})`;
+    g.fillRect(s.x * W, s.y * ground * 0.6, s.b > 0.85 ? 2 : 1.2, s.b > 0.85 ? 2 : 1.2);
+  }
+  // fence, the gate in it
+  const fenceTop = ground - H * 0.3, slat = Math.max(8, u * 3);
+  const gx = W * 0.62, gw = Math.max(u * 18, Math.min(W * 0.22, H * 0.22)), gh = ground - fenceTop - H * 0.02;
+  const fence = `rgb(${38 + L * 40},${34 + L * 36},${32 + L * 34})`;
+  g.fillStyle = fence;
+  for (let x = 0; x < W; x += slat * 1.15) if (x + slat < gx - u * 2 || x > gx + gw + u * 2) g.fillRect(x, fenceTop, slat, ground - fenceTop);
+  g.fillStyle = `rgb(${30 + L * 34},${27 + L * 30},${25 + L * 28})`;
+  g.fillRect(0, fenceTop + H * 0.05, gx - u * 2, slat * 0.45); g.fillRect(gx + gw + u * 2, fenceTop + H * 0.05, W, slat * 0.45);
+  g.fillRect(0, ground - H * 0.08, gx - u * 2, slat * 0.45); g.fillRect(gx + gw + u * 2, ground - H * 0.08, W, slat * 0.45);
+  // posts
+  const postW = Math.max(6, u * 2.2);
+  g.fillStyle = `rgb(${50 + L * 40},${44 + L * 36},${38 + L * 32})`;
+  g.fillRect(gx - postW, fenceTop - u * 3, postW, ground - fenceTop + u * 3);
+  g.fillRect(gx + gw, fenceTop - u * 3, postW, ground - fenceTop + u * 3);
+  // the lane beyond, seen through the open gate
+  const open = Math.sin(angle);
+  const shown = gw * Math.cos(angle); // the gate swings toward us around its left hinge
+  if (angle > 0.01) {
+    g.fillStyle = `rgba(${70 + L * 60},${74 + L * 60},${86 + L * 60},0.6)`;
+    g.fillRect(gx + shown, fenceTop + gh * 0.04, gw - shown, gh * 0.96);
+  }
+  // the gate itself: drawn as a skewed panel that gets narrower and taller near the viewer as it opens
+  const top = fenceTop + gh * 0.04, bot = ground - gh * 0.02;
+  const grow = open * gh * 0.12;
+  g.fillStyle = `rgb(${84 + L * 50},${70 + L * 44},${54 + L * 36})`;
+  g.beginPath();
+  g.moveTo(gx, top); g.lineTo(gx + shown, top - grow); g.lineTo(gx + shown, bot + grow); g.lineTo(gx, bot); g.closePath(); g.fill();
+  g.strokeStyle = `rgb(${54 + L * 30},${44 + L * 26},${34 + L * 22})`; g.lineWidth = Math.max(2, u * 0.7);
+  for (let i = 1; i < 5; i++) { const x = gx + shown * i / 5; g.beginPath(); g.moveTo(x, top - grow * i / 5); g.lineTo(x, bot + grow * i / 5); g.stroke(); }
+  g.lineWidth = Math.max(3, u * 1.1);
+  g.beginPath(); g.moveTo(gx, top + gh * 0.18); g.lineTo(gx + shown, top + gh * 0.18 - grow * 0.6); g.stroke();
+  g.beginPath(); g.moveTo(gx, bot - gh * 0.18); g.lineTo(gx + shown, bot - gh * 0.18 + grow * 0.6); g.stroke();
+  g.beginPath(); g.moveTo(gx, bot - gh * 0.18); g.lineTo(gx + shown, top + gh * 0.18 - grow * 0.6); g.stroke();
+  // latch: a bar on the gate and a keeper on the post
+  const ly = top + gh * 0.3;
+  g.fillStyle = '#5c5f63';
+  g.fillRect(gx + gw + postW * 0.2, ly - u * 0.8, postW * 0.6, u * 1.6);
+  const barEnd = gx + shown, barLen = gw * 0.16 * Math.cos(angle);
+  const lift = latched ? 0 : u * 0.9;
+  g.fillRect(barEnd - barLen, ly - u * 0.35 - lift, barLen + (latched ? postW * 0.6 : 0), u * 0.7);
+  // half a brick at the foot of the gate
+  const bw = Math.max(14, u * 4.4), bh = Math.max(8, u * 2.4);
+  const bx = latched ? gx + gw - bw * 0.95 : gx + gw + postW + u * 2, by = ground - bh * 0.7;
+  g.fillStyle = `rgb(${120 + L * 40},${60 + L * 26},${46 + L * 20})`; g.fillRect(bx, by, bw, bh);
+  g.fillStyle = `rgba(80,120,60,${0.5 + nights * 0.03})`; g.fillRect(bx, by + bh * 0.55, bw * 0.6, bh * 0.45);
+  // knocks: rings at the post
+  for (const k of knocks) {
+    g.strokeStyle = `rgba(230,225,210,${(1 - k.t) * 0.5 * k.s})`; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(gx + gw, ly, u * 2 + k.t * u * 9, 0, Math.PI * 2); g.stroke();
+  }
+  // ground and a path from the back door
+  g.fillStyle = `rgb(${26 + L * 40},${28 + L * 40},${28 + L * 38})`; g.fillRect(0, ground, W, H - ground);
+  const doorX = W * 0.06, doorY = H * 0.97;
+  g.fillStyle = `rgba(${84 + L * 60},${86 + L * 60},${90 + L * 60},0.45)`;
+  for (let i = 1; i <= 7; i++) { // stepping stones along the way to the gate
+    const p = i / 8, x0 = doorX, y0 = doorY, x2 = gx + gw * 0.6, y2 = ground + u * 2, cx = W * 0.4, cy = H * 0.92;
+    const x = (1 - p) * (1 - p) * x0 + 2 * (1 - p) * p * cx + p * p * x2;
+    const y = (1 - p) * (1 - p) * y0 + 2 * (1 - p) * p * cy + p * p * y2;
+    const s = 1.25 - p * 0.6;
+    g.beginPath(); g.ellipse(x, y, u * 3.2 * s, u * 1.1 * s, -0.08, 0, Math.PI * 2); g.fill();
+  }
+  // the frozen birdbath and the woodpile, small, by the fence on the left
+  const bbx = W * 0.22;
+  g.fillStyle = `rgb(${110 + L * 50},${110 + L * 50},${112 + L * 50})`;
+  g.fillRect(bbx - u * 0.8, ground - u * 7, u * 1.6, u * 7);
+  g.beginPath(); g.ellipse(bbx, ground - u * 7, u * 4, u * 1, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(225,232,240,0.7)'; g.beginPath(); g.ellipse(bbx, ground - u * 7.2, u * 3.2, u * 0.6, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = `rgb(${40 + L * 30},${58 + L * 30},${48 + L * 30})`;
+  g.beginPath(); g.moveTo(W * 0.34, ground); g.lineTo(W * 0.345, ground - u * 6); g.quadraticCurveTo(W * 0.4, ground - u * 8, W * 0.455, ground - u * 6); g.lineTo(W * 0.46, ground); g.fill();
+  g.fillStyle = `rgb(${78 + L * 40},${66 + L * 34},${52 + L * 28})`; // the bottom row, under the tarp
+  for (let i = 0; i < 5; i++) { g.beginPath(); g.arc(W * 0.352 + i * (W * 0.1 / 4.5), ground - u * 0.9, u * 0.9, 0, Math.PI * 2); g.fill(); }
+  // the back door light, bottom left, brighter while someone is out
+  const out = walker ? 1 : 0;
+  const dg = g.createRadialGradient(doorX, doorY, 0, doorX, doorY, u * (16 + out * 8));
+  dg.addColorStop(0, `rgba(240,190,110,${0.35 + out * 0.3})`); dg.addColorStop(1, 'rgba(240,190,110,0)');
+  g.fillStyle = dg; g.fillRect(doorX - u * 25, doorY - u * 25, u * 50, u * 50);
+  // the torch
+  if (walker) {
+    let p = walker.dir === 1 ? walker.t : walker.dir === 0 ? 1 : 1 - walker.t;
+    p = p * p * (3 - 2 * p);
+    const x0 = doorX, y0 = doorY, x2 = gx + gw * 0.6, y2 = ground + u * 2, cx = W * 0.4, cy = H * 0.92;
+    const x = (1 - p) * (1 - p) * x0 + 2 * (1 - p) * p * cx + p * p * x2;
+    const y = (1 - p) * (1 - p) * y0 + 2 * (1 - p) * p * cy + p * p * y2;
+    const bob = Math.sin(clock / 120) * u * 0.4;
+    const tg = g.createRadialGradient(x, y - u * 3 + bob, 0, x, y - u * 3 + bob, u * 9);
+    tg.addColorStop(0, 'rgba(255,240,200,0.55)'); tg.addColorStop(1, 'rgba(255,240,200,0)');
+    g.fillStyle = tg; g.fillRect(x - u * 9, y - u * 12 + bob, u * 18, u * 18);
+    g.fillStyle = 'rgba(255,248,225,0.95)'; g.beginPath(); g.arc(x, y - u * 3 + bob, Math.max(2, u * 0.6), 0, Math.PI * 2); g.fill();
+  }
+  // the time
+  g.fillStyle = 'rgba(225,220,205,0.75)'; g.font = `${Math.max(11, u * 2.2)}px Georgia, serif`; g.textAlign = 'right';
+  g.fillText(hhmm(), W - Math.max(12, u * 3), ground - H * 0.3 - u * 6);
+}
+
+function frame(t) {
+  if (lastT === null) lastT = t;
+  const dt = Math.min(100, t - lastT); lastT = t;
+  step(dt); draw();
+  requestAnimationFrame(frame);
+}
+// for checking: #loose starts with the latch already off
+if (/loose/.test(location.hash)) { latched = false; angle = 0.8; }
+requestAnimationFrame(frame);
+say('The wind has learned the latch is getting old.');
+
+window.__gate = {
+  latched: () => latched, angle: () => angle, knocks: () => knockCount, outings: () => outings,
+  nights: () => nights, walker: () => !!walker, clock: () => clock, tap: () => goOut(true),
+};
+</script>
+</body>
+</html>
