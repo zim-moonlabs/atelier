@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sorting Office</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #14161b; overflow: hidden; color: #d6d2c8;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: manipulation; }
+  .msg { position: fixed; left: 0; right: 0; top: 12px; text-align: center; color: #e8e2d4; min-height: 1.4em;
+         pointer-events: none; font: italic 16px/1.4 Georgia, serif; transition: opacity 1s; padding: 0 12px; }
+  .clock { position: fixed; right: 14px; bottom: 58px; color: #a39d90; font: 13px/1 ui-monospace, monospace; pointer-events: none; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #8f897d;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; padding: 0 8px; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A small game in a night sorting office. Letters come one at a time. Tap the pigeonhole of the right round, or Returns. Wrong letters come round again. At five the van leaves."></canvas>
+<p class="msg" id="msg"></p>
+<p class="clock" id="clock"></p>
+<p class="fuss">A night shift at a sorting frame. Tap a pigeonhole, or press 1 to 6. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), clockEl = document.getElementById('clock'), countEl = document.getElementById('count');
+let W, H, dpr, u;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight; u = Math.min(W, H) / 100;
+  c.width = W * dpr; c.height = H * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+let lastMsg = '';
+function say(s) {
+  if (s === lastMsg) return;
+  lastMsg = s; msg.style.opacity = 0;
+  setTimeout(() => { msg.textContent = s; msg.style.opacity = s ? 1 : 0; }, 300);
+}
+
+// Six holes: five rounds and Returns. Invented places.
+const HOLES = [
+  { name: 'Ashby', code: 'AS1' },
+  { name: 'Brook End', code: 'BE2' },
+  { name: 'Carrow', code: 'CR3' },
+  { name: 'Dunmore', code: 'DN4' },
+  { name: 'Elm Row', code: 'ER5' },
+  { name: 'Returns', code: '' },
+];
+const NAMES = ['The Occupier', 'Mr D. Fell', 'Mrs R. Hale', 'J. Okoro', 'Flat 2', 'A. Lindqvist', 'The Householder',
+  'M. & T. Price', 'Dr S. Rao', 'Ms E. Vance', 'K. Brennan', 'The Manager', 'P. Ashworth', 'Mrs L. Moss'];
+const STREETS = ['3 Mill Lane', '14 Church Walk', '7 Station Road', '22 The Green', '1 Orchard Close', '9 Ferry Street',
+  '41 High Street', '5 Quarry Rise', '18 Well Row', '2 Tannery Yard', '11 Beck Side', '30 School Hill'];
+const POSTCARDS = ['Weather fine. Sea cold. Back Thursday.', 'Saw the castle. Thought of you, it was shut.',
+  'The cat is fine. The neighbour says hello.', 'Rained all week. Lovely anyway.', 'Feet hurt. Worth it.'];
+const RETURN_NOTES = ['not known at this address', 'gone away', 'no such street', 'moved, no address'];
+
+let rnd = Math.random;
+const pick = a => a[Math.floor(rnd() * a.length)];
+
+const pc = i => 0.12 + 0.26 * Math.min(1, i / SHIFT);
+const COAT = ['The canteen kettle works again.', 'Snow due at six. Take the long way home.',
+  'There are mince pies in the tin. Leave two for the day shift.', 'Whoever is up: the heron is back on the canal.',
+  'Lost: one glove, green. If found, it is yours now.'];
+let coat = '';
+function makeLetter(i) {
+  const r = rnd();
+  const hole = Math.floor(rnd() * 5);
+  const L = { id: i, name: pick(NAMES), street: pick(STREETS), hole, town: HOLES[hole].name, code: HOLES[hole].code + ' ' + (1 + Math.floor(rnd() * 9)) + pick(['AB', 'HQ', 'LT', 'RW', 'XJ', 'DE']),
+    kind: 'letter', note: '', tint: pick(['#efe9db', '#e9e4d6', '#f2ecdf', '#e2dccd', '#dfe6ea', '#efe0d8']), tries: 0 };
+  if (r < 0.12) { L.kind = 'postcard'; L.note = pick(POSTCARDS); }
+  else if (r < pc(i)) { L.town = ''; }                       // postcode only: more of them as the night goes on
+  else if (r < pc(i) + 0.10) { L.hole = 5; L.code = ''; L.note = pick(RETURN_NOTES); } // crossed out: Returns
+  else if (r < pc(i) + 0.16) { L.kind = 'parcel'; }
+  return L;
+}
+
+const SHIFT = 36;                    // letters in a night
+let queue, done, wrong, made, fill, fly, state, t, finishAt, special;
+function start() {
+  queue = []; done = 0; wrong = 0; made = 0; fill = [0, 0, 0, 0, 0, 0]; fly = []; state = 'sort'; t = 0; finishAt = 0;
+  special = Math.floor(8 + rnd() * 20); // one letter in the night with no address
+  coat = pick(COAT);
+  for (let i = 0; i < 4; i++) queue.push(makeLetter(made++));
+  say('Ten to one. The bags are open. Sort to the frame.');
+}
+
+function current() { return queue[0]; }
+
+// The first time each kind shows up on the bench, one quiet hint (once per page, not per night).
+const seen = {};
+function firstTime(L) {
+  const k = L.special ? 'special' : L.hole === 5 ? 'return' : !L.town ? 'code' : L.kind;
+  if (seen[k]) return; seen[k] = true;
+  const hint = { code: 'No town on this one. The postcode says it.', return: 'Crossed out and written on. That is Returns.',
+    parcel: 'A parcel. Same frame, it just sits heavier.', special: 'No name, no street, no stamp. Put it anywhere.' }[k];
+  if (hint) say(hint);
+}
+
+function holeRects() {
+  const portrait = H > W;
+  const cols = portrait ? 3 : 6, rows = portrait ? 2 : 1;
+  const fw = Math.min(W * 0.94, portrait ? W * 0.94 : 110 * u * 1.3);
+  const top = H * (portrait ? 0.12 : 0.13), fh = H * (portrait ? 0.34 : 0.3);
+  const x0 = (W - fw) / 2, cw = fw / cols, ch = fh / rows;
+  return HOLES.map((h, i) => ({ x: x0 + (i % cols) * cw + 3, y: top + Math.floor(i / cols) * ch + 3, w: cw - 6, h: ch - 6 }));
+}
+
+function sortInto(i) {
+  if (state !== 'sort' || !queue.length) return;
+  const L = queue.shift();
+  const R = holeRects()[i];
+  const ok = L.special || L.hole === i;
+  fly.push({ L, x: W / 2, y: H * 0.68, tx: L.special ? W * 0.9 : R.x + R.w / 2, ty: L.special ? H * 0.98 : R.y + R.h * 0.7, k: 0, ok: ok && !L.special, hole: i });
+  if (ok) {
+    done++;
+    if (L.special) say('No round takes that one. You put it in your coat. It is for whoever is up.');
+    else if (L.hole === 5) say(pick(['Back it goes.', 'Someone will get it back.', 'It tried.']));
+    else if (L.kind === 'postcard' && rnd() < 0.6) say('You read it. Everyone reads the postcards.');
+    else if (rnd() < 0.15) say(pick(['Tidy.', 'Fine.', 'That is the way.', 'Kettle on soon.']));
+  } else {
+    wrong++; L.tries++;
+    say(pick(['Wrong round. It will come back to you.', 'Not that one. Round again.', 'The driver would know. It comes back.']));
+    queue.splice(Math.min(queue.length, 2), 0, L);
+  }
+  while (queue.length < 3 && made < SHIFT) {
+    const n = makeLetter(made++);
+    if (n.id === special) { Object.assign(n, { kind: 'letter', special: true, name: 'For whoever is up', street: '', town: '', code: '', hole: 5, note: '', tint: '#f4efe2' }); }
+    queue.push(n);
+  }
+  if (!queue.length) { state = 'van'; finishAt = t; say('Five. The van backs up to the dock.'); }
+}
+
+function hit(x, y) {
+  if (state === 'end') { start(); return; }
+  holeRects().forEach((R, i) => { if (x >= R.x && x <= R.x + R.w && y >= R.y && y <= R.y + R.h) sortInto(i); });
+}
+c.addEventListener('pointerdown', e => hit(e.clientX, e.clientY));
+addEventListener('keydown', e => { const n = parseInt(e.key, 10); if (n >= 1 && n <= 6) sortInto(n - 1); else if (state === 'end' && (e.key === 'Enter' || e.key === ' ')) start(); });
+
+function clockText() {
+  const p = state === 'sort' ? (done + wrong * 0.3) / SHIFT : 1;
+  const mins = 50 + Math.min(1, p) * 250; // 00:50 to 05:00
+  const h = Math.floor(mins / 60), m = Math.floor(mins % 60);
+  return '0' + h + ':' + String(m).padStart(2, '0');
+}
+
+function font(px, style) { g.font = (style || '') + ' ' + Math.round(px) + 'px Georgia, serif'; }
+
+function drawLetter(L, x, y, s) {
+  const w = 46 * u * s, h = (L.kind === 'parcel' ? 30 : 26) * u * s;
+  g.save(); g.translate(x, y);
+  g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-w / 2 + 3, -h / 2 + 4, w, h);
+  g.fillStyle = L.kind === 'parcel' ? '#b08d62' : L.tint; g.fillRect(-w / 2, -h / 2, w, h);
+  if (L.kind === 'parcel') { g.fillStyle = '#d8c7a4'; g.fillRect(-w / 2, -2 * u * s, w, 4 * u * s); g.fillStyle = '#f1ead9'; g.fillRect(-w * 0.3, -h * 0.32, w * 0.6, h * 0.62); }
+  if (L.kind === 'postcard') { g.strokeStyle = '#b9b2a2'; g.lineWidth = 1; g.beginPath(); g.moveTo(-w * 0.02, -h * 0.4); g.lineTo(-w * 0.02, h * 0.4); g.stroke(); }
+  // stamp
+  if (!L.special) {
+    g.fillStyle = pickTint(L.id); g.fillRect(w / 2 - 9 * u * s, -h / 2 + 2 * u * s, 7 * u * s, 8 * u * s);
+    g.strokeStyle = 'rgba(40,40,40,0.5)'; g.beginPath(); g.arc(w / 2 - 12 * u * s, -h / 2 + 6 * u * s, 4 * u * s, 0, 7); g.stroke();
+  }
+  g.fillStyle = '#2b2a33'; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  if (L.special) {
+    font(3.4 * u * s, 'italic'); g.textAlign = 'center'; g.fillText('For whoever is up', 0, u * s); g.restore(); return;
+  }
+  const ax = L.kind === 'postcard' ? w * 0.03 : -w * 0.3, lh = 3.4 * u * s;
+  if (L.kind === 'postcard') {
+    font(2.3 * u * s, 'italic'); g.fillStyle = '#4a4650';
+    wrap(L.note, -w * 0.46, -h * 0.18, w * 0.44, 2.9 * u * s);
+    g.fillStyle = '#2b2a33';
+  }
+  font(2.9 * u * s, 'italic');
+  const lines = [L.name, L.street, L.town, L.code].filter(Boolean);
+  lines.forEach((s2, i) => g.fillText(s2, ax, -h * 0.02 + i * lh));
+  if (L.note && L.hole === 5) {
+    g.strokeStyle = '#8a2b2b'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(ax - 2, -h * 0.02 - lh * 0.3 + lh); g.lineTo(ax + w * 0.55, -h * 0.02 - lh * 0.3 + lh); g.stroke();
+    g.fillStyle = '#8a2b2b'; font(2.6 * u * s, 'italic'); g.save(); g.rotate(-0.08); g.fillText(L.note, -w * 0.42, h * 0.4); g.restore();
+  }
+  g.restore();
+}
+function pickTint(i) { return ['#7a2e2e', '#2e4d7a', '#3d6b3a', '#7a5d2e', '#5b3a6b'][i % 5]; }
+function wrap(text, x, y, maxW, lh) {
+  let line = '', yy = y;
+  for (const w of text.split(' ')) {
+    const tst = line ? line + ' ' + w : w;
+    if (g.measureText(tst).width > maxW && line) { g.fillText(line, x, yy); line = w; yy += lh; } else line = tst;
+  }
+  if (line) g.fillText(line, x, yy);
+}
+
+let last = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now; t += dt;
+  // room
+  g.fillStyle = '#14161b'; g.fillRect(0, 0, W, H);
+  const lamp = g.createRadialGradient(W / 2, -H * 0.1, 10, W / 2, H * 0.2, H * 0.9);
+  lamp.addColorStop(0, 'rgba(255,226,170,0.20)'); lamp.addColorStop(1, 'rgba(255,226,170,0)');
+  g.fillStyle = lamp; g.fillRect(0, 0, W, H);
+  // bench
+  g.fillStyle = '#3a3128'; g.fillRect(0, H * 0.52, W, H * 0.48);
+  g.fillStyle = '#4a3f33'; g.fillRect(0, H * 0.52, W, 4);
+  // frame
+  const RS = holeRects();
+  RS.forEach((R, i) => {
+    g.fillStyle = '#231d17'; g.fillRect(R.x - 3, R.y - 3, R.w + 6, R.h + 6);
+    g.fillStyle = '#0f0d0b'; g.fillRect(R.x, R.y, R.w, R.h);
+    // stack of letters inside
+    const n = Math.min(fill[i], 30);
+    for (let k = 0; k < n; k++) {
+      g.fillStyle = k % 3 ? '#d9d2c2' : '#cfc7b4';
+      g.fillRect(R.x + R.w * 0.12 + (k % 4), R.y + R.h - 6 - k * Math.max(1.5, R.h * 0.025), R.w * 0.76, Math.max(2, R.h * 0.03));
+    }
+    g.fillStyle = '#e6dcc4'; g.fillRect(R.x + R.w * 0.1, R.y + 4, R.w * 0.8, Math.max(16, R.h * 0.24));
+    g.fillStyle = '#2b2a33'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    font(Math.max(10, Math.min(R.w * 0.13, 2.8 * u)));
+    g.fillText((i + 1) + '  ' + HOLES[i].name, R.x + R.w / 2, R.y + 4 + Math.max(16, R.h * 0.24) * 0.38);
+    font(Math.max(8, Math.min(R.w * 0.1, 2.1 * u)), 'italic');
+    g.fillStyle = '#5a554c'; g.fillText(HOLES[i].code || 'gone away', R.x + R.w / 2, R.y + 4 + Math.max(16, R.h * 0.24) * 0.76);
+  });
+  // tray of waiting letters
+  for (let k = Math.min(queue.length, 3) - 1; k >= 1; k--) {
+    g.fillStyle = k === 1 ? '#bdb5a3' : '#a49c8b';
+    g.fillRect(W / 2 - 23 * u + k * 6, H * 0.68 - 13 * u - k * 5, 46 * u, 26 * u);
+  }
+  if (state === 'sort' && current()) { drawLetter(current(), W / 2, H * 0.68, 1); firstTime(current()); }
+  // flying letters
+  for (const f of fly) {
+    f.k = Math.min(1, f.k + dt * 3.2);
+    const e = 1 - Math.pow(1 - f.k, 3);
+    drawLetter(f.L, f.x + (f.tx - f.x) * e, f.y + (f.ty - f.y) * e - Math.sin(e * Math.PI) * 4 * u, 1 - e * 0.85);
+    if (f.k >= 1 && f.ok && !f.counted) { fill[f.hole]++; f.counted = true; }
+  }
+  fly = fly.filter(f => f.k < 1);
+  // van
+  if (state === 'van' || state === 'end') {
+    const k = Math.min(1, (t - finishAt) / 4);
+    g.fillStyle = 'rgba(20,22,27,' + (0.55 * k) + ')'; g.fillRect(0, 0, W, H);
+    if (k >= 1 && state === 'van') {
+      fill = fill.map((v, i) => i === 5 ? v : 0); state = 'end';
+      say('The van goes. ' + (done - 1) + ' in the bags, one in your coat' + (wrong ? ', ' + wrong + (wrong === 1 ? ' wrong turn' : ' wrong turns') : '') + '. On doormats by eleven. Tap for another night.');
+    }
+    if (state === 'end') {
+      g.fillStyle = '#e8e2d4'; g.textAlign = 'center'; g.textBaseline = 'middle'; font(3.4 * u, 'italic');
+      g.fillText('Nobody on the doormat side will think of tonight.', W / 2, H * 0.64);
+      g.fillText('That is how you know it went right.', W / 2, H * 0.64 + 5 * u);
+      g.fillStyle = '#c9c1ae'; font(2.8 * u, 'italic');
+      g.fillText('The one in your coat says:', W / 2, H * 0.64 + 13 * u);
+      g.fillStyle = '#e8e2d4'; font(3 * u, 'italic');
+      g.fillText(coat, W / 2, H * 0.64 + 18 * u);
+    }
+  }
+  clockEl.textContent = state === 'sort' ? clockText() : '05:00';
+  countEl.textContent = done ? '(' + done + ' sorted)' : '';
+  requestAnimationFrame(frame);
+}
+start();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

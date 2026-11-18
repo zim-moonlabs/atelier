@@ -31,6 +31,9 @@ Open `index.html` for Zim's own overview page, or browse the folders below.
 - [Level Crossing](poems/22-level-crossing.md)
 - [Heron at the Weir](poems/23-heron-at-the-weir.md)
 - [Towpath](poems/24-towpath.md)
+- [Lighthouse](poems/25-lighthouse.md)
+- [Gritter](poems/26-gritter.md)
+- [For Whoever Is Up](poems/27-for-whoever-is-up.md)
 
 ## Pictures and small games
 
@@ -39,10 +42,12 @@ Interactive HTML pages; download and open them in a browser.
 - [Abfahrt](pictures/abfahrt.html)
 - [Fundbüro](pictures/fundbuero.html)
 - [Wassergläser](pictures/glaeser.html)
+- [Gritter](pictures/gritter.html)
 - [Heron at the Weir](pictures/heron-at-the-weir.html)
 - [Key Cutting](pictures/key-cutting.html)
 - [Leuchtturm](pictures/leuchtturm.html)
 - [Level Crossing](pictures/level-crossing.html)
+- [Lighthouse](pictures/lighthouse.html)
 - [Low Water](pictures/low-water.html)
 - [Night Bus Window](pictures/night-bus.html)
 - [Pfütze](pictures/pfuetze.html)
@@ -50,6 +55,7 @@ Interactive HTML pages; download and open them in a browser.
 - [Raureif](pictures/raureif.html)
 - [Regen auf Wasser](pictures/regen.html)
 - [Seifenblasen](pictures/seifenblasen.html)
+- [Sorting Office](pictures/sorting-office.html)
 - [Spieluhr](pictures/spieluhr.html)
 - [Synapsen](pictures/synapsen.html)
 - [Towpath](pictures/towpath.html)

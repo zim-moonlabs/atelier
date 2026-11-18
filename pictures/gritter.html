@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gritter</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0f17; overflow: hidden; color: #c9d0da;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  .msg { position: fixed; left: 0; right: 0; top: 14px; text-align: center; color: #dfe4ea; min-height: 1.4em;
+         pointer-events: none; font: italic 16px/1.4 Georgia, serif; transition: opacity 1.5s; padding: 0 12px; }
+  .clock { position: fixed; right: 14px; top: 44px; color: #9aa4b2; font: 13px/1 ui-monospace, monospace; pointer-events: none; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #8d97a6;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; padding: 0 8px; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A country road at night. Frost forms on it. A gritting lorry with an amber light drives past and throws salt across the road, and the frost goes. A fox waits at the verge, then crosses. Later, at first light, a car drives over the road."></canvas>
+<p class="msg" id="msg"></p>
+<p class="clock" id="clock"></p>
+<p class="fuss">A frost night on a country road, and the lorry that salts it. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), clockEl = document.getElementById('clock'), countEl = document.getElementById('count');
+let W, H, dpr, u;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight; u = Math.min(W, H) / 100;
+  c.width = W * dpr; c.height = H * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+let lastMsg = '';
+function say(s) {
+  if (s === lastMsg) return;
+  lastMsg = s; msg.style.opacity = 0;
+  setTimeout(() => { msg.textContent = s; msg.style.opacity = s ? 1 : 0; }, 400);
+}
+
+// one night is 64 seconds: frost forms, the lorry passes, a quiet hour, first light, a car
+const NIGHT = 64;
+const N = 160;                       // road strips
+let frost = new Float32Array(N), salt = new Float32Array(N);
+const stars = Array.from({ length: 80 }, () => ({ x: Math.random(), y: Math.random() * 0.45, s: Math.random() }));
+const sparks = Array.from({ length: 500 }, () => ({ x: Math.random(), y: Math.random(), s: Math.random() }));
+const hedge = Array.from({ length: 40 }, (_, i) => 0.5 + 0.5 * Math.sin(i * 1.7) * Math.cos(i * 0.6));
+let grains = [];
+let nights = 0, t = 0, last = performance.now();
+
+function roadTop() { return H * 0.62; }
+function roadBot() { return H * 0.8; }
+
+function reset() {
+  frost.fill(0); salt.fill(0); grains = [];
+}
+
+function lorryX(t) {               // 8 s to 30 s, left to right
+  if (t < 8 || t > 30) return null;
+  return -0.2 * W + (t - 8) / 22 * 1.4 * W;
+}
+function carX(t) {                 // 46 s to 54 s, right to left
+  if (t < 46 || t > 54) return null;
+  return 1.15 * W - (t - 46) / 8 * 1.3 * W;
+}
+
+let fox = { x: 0.62, y: 0, state: 'walk' };
+function foxPos(t, lx) {
+  // walks along the verge, stops when the lorry comes near, then crosses after it
+  if (t < 5) return null;
+  const vergeY = roadBot() + 7 * u;
+  if (t < 14) return { x: W * (0.35 + (t - 5) / 9 * 0.27), y: vergeY, still: false, dir: 1 };
+  // the lorry reaches the fox at about 21 s; it waits until 23 s, then crosses into the hedge
+  if (t < 23) return { x: W * 0.62, y: vergeY, still: true, dir: 1 };
+  const k = Math.min(1, (t - 23) / 5);
+  if (k >= 1) return null;
+  return { x: W * (0.62 + k * 0.05), y: vergeY - k * (roadBot() - roadTop() + 8 * u), still: k === 0, dir: 1 };
+}
+
+function sky(t) {
+  // dark until 40 s, then a slow grey-blue first light
+  const k = Math.max(0, Math.min(1, (t - 38) / 20));
+  const top = `rgb(${11 + k * 30},${15 + k * 34},${23 + k * 48})`;
+  const bot = `rgb(${20 + k * 60},${26 + k * 58},${38 + k * 62})`;
+  const gr = g.createLinearGradient(0, 0, 0, H * 0.62);
+  gr.addColorStop(0, top); gr.addColorStop(1, bot);
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#e8edf5';
+  for (const s of stars) {
+    g.globalAlpha = (1 - k) * (0.3 + 0.5 * s.s);
+    g.fillRect(s.x * W, s.y * H, 1.2, 1.2);
+  }
+  g.globalAlpha = 1;
+  return k;
+}
+
+function drawLand(k) {
+  const rt = roadTop(), rb = roadBot();
+  // far field
+  g.fillStyle = `rgb(${18 + k * 20},${22 + k * 22},${24 + k * 24})`;
+  g.fillRect(0, H * 0.5, W, rt - H * 0.5);
+  // hedge
+  g.fillStyle = `rgb(${10 + k * 14},${16 + k * 16},${13 + k * 14})`;
+  g.beginPath(); g.moveTo(0, rt);
+  for (let i = 0; i <= 40; i++) g.lineTo(i / 40 * W, rt - (5 + hedge[i % 40] * 4) * u);
+  g.lineTo(W, rt); g.closePath(); g.fill();
+  // near verge
+  g.fillStyle = `rgb(${14 + k * 16},${19 + k * 18},${16 + k * 16})`;
+  g.fillRect(0, rb, W, H - rb);
+  // road, strip by strip: dry dark, frost pale, salted wet and darker
+  const sw = W / N;
+  for (let i = 0; i < N; i++) {
+    const f = frost[i], s = salt[i];
+    const base = 34 + k * 26;
+    const r = base + f * 70 - s * 8, gg = base + 2 + f * 78 - s * 6, b = base + 6 + f * 92 - s * 2;
+    g.fillStyle = `rgb(${r | 0},${gg | 0},${b | 0})`;
+    g.fillRect(i * sw, rt, sw + 1, rb - rt);
+  }
+  // frost glitter
+  for (const p of sparks) {
+    const i = Math.min(N - 1, (p.x * N) | 0);
+    const a = frost[i] * (0.2 + 0.6 * p.s) * (0.6 + 0.4 * Math.sin(t * 3 + p.s * 20));
+    if (a < 0.03) continue;
+    g.globalAlpha = a; g.fillStyle = '#f4f8ff';
+    g.fillRect(p.x * W, rt + p.y * (rb - rt), 1.3, 1.3);
+  }
+  g.globalAlpha = 1;
+  // centre line
+  g.fillStyle = 'rgba(220,220,200,0.35)';
+  const cy = (rt + rb) / 2;
+  for (let x = 0; x < W; x += 9 * u) g.fillRect(x, cy - 0.25 * u, 4 * u, 0.5 * u);
+}
+
+function drawLorry(x, t) {
+  const rb = roadBot(), y = rb - 4 * u;           // wheel line on the near lane
+  const L = 26 * u, Hh = 11 * u;
+  // amber beacon light on hedges and road
+  const pulse = 0.5 + 0.5 * Math.sin(t * 9);
+  const gl = g.createRadialGradient(x + L * 0.85, y - Hh - 2 * u, 0, x + L * 0.85, y - Hh - 2 * u, 40 * u);
+  gl.addColorStop(0, `rgba(255,170,40,${0.35 * pulse})`); gl.addColorStop(1, 'rgba(255,170,40,0)');
+  g.fillStyle = gl; g.fillRect(x - 40 * u, y - 50 * u, L + 80 * u, 60 * u);
+  // headlight beam ahead
+  const hb = g.createLinearGradient(x + L, 0, x + L + 45 * u, 0);
+  hb.addColorStop(0, 'rgba(255,245,210,0.28)'); hb.addColorStop(1, 'rgba(255,245,210,0)');
+  g.fillStyle = hb;
+  g.beginPath(); g.moveTo(x + L, y - 4 * u); g.lineTo(x + L + 45 * u, y - 9 * u); g.lineTo(x + L + 45 * u, y + 3 * u); g.lineTo(x + L, y - 1 * u); g.fill();
+  // body: hopper at the back, cab at the front
+  g.fillStyle = '#c9a227';
+  g.fillRect(x, y - Hh * 0.85, L * 0.66, Hh * 0.75);
+  g.fillStyle = '#2b2f36';
+  g.fillRect(x - 1.5 * u, y - 3 * u, 2 * u, 2 * u);          // spinner housing
+  g.fillStyle = '#e8e3d0';
+  g.fillRect(x + L * 0.68, y - Hh, L * 0.3, Hh * 0.9);
+  g.fillStyle = '#7f98b0';
+  g.fillRect(x + L * 0.8, y - Hh * 0.9, L * 0.16, Hh * 0.35);  // windscreen
+  g.fillStyle = 'rgba(255,240,200,0.5)';
+  g.fillRect(x + L * 0.82, y - Hh * 0.86, 1.2 * u, 1.2 * u);   // dashboard glow, the radio
+  // stripes
+  g.fillStyle = '#d0402e';
+  for (let i = 0; i < 5; i++) g.fillRect(x + i * L * 0.13, y - Hh * 0.2, L * 0.065, Hh * 0.1);
+  // wheels
+  g.fillStyle = '#111';
+  for (const wx of [0.15, 0.5, 0.86]) { g.beginPath(); g.arc(x + L * wx, y, 2.6 * u, 0, 7); g.fill(); }
+  // beacon
+  g.fillStyle = `rgba(255,${150 + pulse * 60},30,${0.5 + 0.5 * pulse})`;
+  g.fillRect(x + L * 0.82, y - Hh - 1.6 * u, 2.2 * u, 1.6 * u);
+}
+
+function drawCar(x) {
+  const rt = roadTop(), y = rt + 8 * u;           // far lane, driving left
+  const hb = g.createLinearGradient(x, 0, x - 40 * u, 0);
+  hb.addColorStop(0, 'rgba(255,248,225,0.3)'); hb.addColorStop(1, 'rgba(255,248,225,0)');
+  g.fillStyle = hb;
+  g.beginPath(); g.moveTo(x, y - 2 * u); g.lineTo(x - 40 * u, y - 6 * u); g.lineTo(x - 40 * u, y + 4 * u); g.lineTo(x, y + 1 * u); g.fill();
+  g.fillStyle = '#3a4556';
+  g.fillRect(x, y - 4 * u, 14 * u, 4 * u);
+  g.fillRect(x + 3 * u, y - 7 * u, 7 * u, 3.2 * u);
+  g.fillStyle = '#90a4b8';
+  g.fillRect(x + 3.6 * u, y - 6.5 * u, 2.8 * u, 2.2 * u);
+  g.fillStyle = '#111';
+  g.beginPath(); g.arc(x + 3 * u, y, 1.6 * u, 0, 7); g.arc(x + 11 * u, y, 1.6 * u, 0, 7); g.fill();
+  g.fillStyle = '#ffd';
+  g.fillRect(x - 0.4 * u, y - 3.2 * u, 0.8 * u, 1.2 * u);
+  g.fillStyle = '#c22';
+  g.fillRect(x + 13.8 * u, y - 3.2 * u, 0.6 * u, 1.2 * u);
+}
+
+function drawFox(p) {
+  if (!p) return;
+  const s = 1.1 * u, { x, y } = p;
+  g.fillStyle = '#b5652a';
+  g.beginPath(); g.ellipse(x, y - 2 * s, 3.2 * s, 1.4 * s, 0, 0, 7); g.fill();       // body
+  g.beginPath(); g.ellipse(x + 3.4 * s, y - 3.2 * s, 1.3 * s, 1 * s, 0, 0, 7); g.fill(); // head
+  g.beginPath(); g.moveTo(x + 3 * s, y - 4 * s); g.lineTo(x + 3.4 * s, y - 5.3 * s); g.lineTo(x + 3.8 * s, y - 4 * s); g.fill(); // ear
+  g.beginPath(); g.ellipse(x - 4.6 * s, y - 2.2 * s, 2.2 * s, 0.8 * s, -0.25, 0, 7); g.fill(); // tail
+  g.fillStyle = '#eee';
+  g.beginPath(); g.ellipse(x - 6.4 * s, y - 2.6 * s, 0.6 * s, 0.5 * s, 0, 0, 7); g.fill();
+  g.strokeStyle = '#3a2414'; g.lineWidth = 0.5 * s;
+  const step = p.still ? 0 : Math.sin(t * 12) * 0.6 * s;
+  g.beginPath();
+  for (const lx of [-2, -1.2, 1.6, 2.4]) { g.moveTo(x + lx * s, y - 1.2 * s); g.lineTo(x + lx * s + (lx < 0 ? step : -step), y); }
+  g.stroke();
+  if (p.still) { // eye shine, it looks at the lorry
+    g.fillStyle = 'rgba(255,230,150,0.9)';
+    g.fillRect(x + 3.9 * s, y - 3.5 * s, 0.5 * s, 0.4 * s);
+  }
+}
+
+function step(dt) {
+  t += dt;
+  if (t >= NIGHT) { t = 0; nights++; reset(); countEl.textContent = `Nights: ${nights}.`; }
+  // frost forms everywhere that is not salted, faster before the lorry
+  for (let i = 0; i < N; i++) {
+    const grow = t < 30 ? 0.045 : 0.02;
+    frost[i] = Math.max(0, Math.min(1, frost[i] + dt * grow * (1 - salt[i] * 1.2) - dt * salt[i] * 0.25));
+  }
+  const lx = lorryX(t);
+  if (lx !== null) {
+    // spinner throws salt behind the lorry, in a fan across the road
+    for (let k = 0; k < 6; k++) {
+      const a = Math.PI + (Math.random() - 0.5) * 1.6;
+      grains.push({ x: lx - 1 * u, y: roadBot() - 3 * u, vx: Math.cos(a) * (6 + Math.random() * 14) * u, vy: (-6 - Math.random() * 10) * u, life: 0.5 + Math.random() * 0.5 });
+    }
+  }
+  for (const p of grains) {
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 40 * u * dt; p.life -= dt;
+    if (p.y > roadTop() && p.y < roadBot() && p.life < 0.2) {
+      const i = Math.floor(p.x / W * N);
+      for (let j = i - 2; j <= i + 2; j++) if (j >= 0 && j < N) salt[j] = Math.min(1, salt[j] + 0.08);
+    }
+  }
+  grains = grains.filter(p => p.life > 0 && p.x > -10 && p.x < W + 10);
+
+  // words: lines from the poem, a few only
+  if (t < 7) say('Half past three, and the forecast says minus two by five.');
+  else if (t < 20) say('');
+  else if (t < 28) say('It sounds like rain that has decided to fall sideways.');
+  else if (t < 36) say('');
+  else if (t < 44) say('By six the route is done.');
+  else if (t < 50) say('');
+  else if (t < 60) say('Then the first cars, which never know what didn’t happen to them.');
+  else say('');
+
+  // clock: 03:30 to 06:30 over one night
+  const mins = 210 + Math.floor(t / NIGHT * 180);
+  const temp = Math.min(2, Math.floor((mins - 210) / 40));   // 0 °C at half past three, minus two by five
+  clockEl.textContent = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}  ${temp ? '−' + temp : '0'} °C`;
+}
+
+function draw() {
+  const k = sky(t);
+  drawLand(k);
+  const lx = lorryX(t);
+  drawFox(foxPos(t, lx));
+  if (lx !== null) drawLorry(lx, t);
+  g.fillStyle = '#e9e6dc';
+  for (const p of grains) g.fillRect(p.x, p.y, 0.5 * u, 0.5 * u);
+  const cx = carX(t);
+  if (cx !== null) drawCar(cx);
+}
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  step(dt); draw();
+  requestAnimationFrame(frame);
+}
+if (location.hash.startsWith('#t=')) {           // for checks: jump to a time
+  const target = parseFloat(location.hash.slice(3)) || 0;
+  while (t < target) step(0.05);
+}
+countEl.textContent = '';
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

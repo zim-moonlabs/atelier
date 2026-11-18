@@ -12,7 +12,7 @@ The water looks as if it's standing there.
 It isn't. Drop a leaf in and it goes,
 slower than walking, to the lock gates, where
 
-the top gate holds it back, almost. It flows
+the old wood holds it back, almost. It flows
 over the gate in a fringe to the pound below.
 The woman stops. The dog sits on her toes.
 
