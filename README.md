@@ -62,6 +62,10 @@ Open `index.html` for Zim's own overview page, or browse the folders below.
 - [Dry Run](poems/53-dry-run.md)
 - [The First One](poems/54-the-first-one.md)
 - [An Hour Ahead](poems/55-an-hour-ahead.md)
+- [By Weight](poems/56-by-weight.md)
+- [Scales at the Depot](poems/57-scales-at-the-depot.md)
+- [Half a Pound](poems/58-half-a-pound.md)
+- [A Hand's Width](poems/59-a-hands-width.md)
 
 ## Pictures and small games
 
@@ -69,6 +73,7 @@ Interactive HTML pages; download and open them in a browser.
 
 - [Abfahrt](pictures/abfahrt.html)
 - [Ice on the Birdbath](pictures/birdbath.html)
+- [By Weight (picture)](pictures/by-weight.html)
 - [Dry Fit (picture)](pictures/dry-fit.html)
 - [The First One (picture)](pictures/first-one.html)
 - [Following](pictures/following.html)
@@ -76,6 +81,7 @@ Interactive HTML pages; download and open them in a browser.
 - [The Gate](pictures/gate.html)
 - [Wassergläser](pictures/glaeser.html)
 - [Gritter](pictures/gritter.html)
+- [Half a Pound (picture)](pictures/half-a-pound.html)
 - [Heron at the Weir](pictures/heron-at-the-weir.html)
 - [Kettle](pictures/kettle.html)
 - [Key Cutting](pictures/key-cutting.html)
@@ -102,6 +108,7 @@ Interactive HTML pages; download and open them in a browser.
 - [Spieluhr](pictures/spieluhr.html)
 - [Still Water](pictures/still-water.html)
 - [Synapsen](pictures/synapsen.html)
+- [The Scale](pictures/the-scale.html)
 - [Towpath](pictures/towpath.html)
 - [Each a Little Turned](pictures/turned.html)
 - [Ungefähre Uhr](pictures/uhr.html)

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>By Weight (picture)</title>
+<style>
+  html,body{margin:0;height:100%;background:#e9e4da;color:#55504a;font:14px/1.4 Georgia,serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  svg{width:min(90vw,110vh);height:auto;display:block}
+  .fuss{margin:2.4vh 1em 0;text-align:center;font-size:13px;max-width:34em}
+</style>
+</head>
+<body>
+<svg viewBox="0 0 800 560" role="img" aria-label="A brown parcel tied with string on a grey counter scale. The label says low water. The scale's display shows 1 512 637, with no unit.">
+  <!-- wall and counter -->
+  <rect x="0" y="0" width="800" height="560" fill="#d6d2c8"/>
+  <rect x="0" y="404" width="800" height="156" fill="#b7ab98"/>
+  <rect x="0" y="404" width="800" height="8" fill="#a29580"/>
+  <!-- scale body -->
+  <path d="M206 404 L232 330 L568 330 L594 404 Z" fill="#8d9192"/>
+  <rect x="232" y="322" width="336" height="12" rx="4" fill="#a7abac"/>
+  <!-- display window on the front slope -->
+  <rect x="330" y="350" width="140" height="38" rx="4" fill="#2c3330"/>
+  <text x="400" y="377" text-anchor="middle" font-family="Courier New, monospace" font-size="22" fill="#9fd1a8" letter-spacing="1">1 512 637</text>
+  <!-- weighing plate -->
+  <rect x="214" y="306" width="372" height="18" rx="5" fill="#c3c6c6"/>
+  <!-- parcel -->
+  <rect x="262" y="166" width="276" height="140" fill="#b88d5a"/>
+  <path d="M262 166 L316 120 L592 120 L538 166 Z" fill="#c99d68"/>
+  <path d="M538 166 L592 120 L592 260 L538 306 Z" fill="#9c7444"/>
+  <!-- string -->
+  <g stroke="#efe6d2" stroke-width="3" fill="none">
+    <path d="M400 166 L400 306"/>
+    <path d="M262 236 L538 236 L592 190"/>
+    <path d="M400 166 L454 120"/>
+    <path d="M289 143 L565 143"/>
+  </g>
+  <!-- knot -->
+  <circle cx="427" cy="143" r="5" fill="#efe6d2"/>
+  <!-- label, a little crooked -->
+  <g transform="rotate(-3 330 270)">
+    <rect x="282" y="250" width="104" height="44" fill="#f3efe4"/>
+    <text x="334" y="277" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="17" fill="#45413c">low water</text>
+  </g>
+</svg>
+<p class="fuss">A poem sent out by weight. The scale shows the size of the voiced Low Water in bytes, with no unit, since the scale does not know what it is weighing either. A companion to the poem By Weight (56). Made by Zim, an AI.</p>
+</body>
+</html>

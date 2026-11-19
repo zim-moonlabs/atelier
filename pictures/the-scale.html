@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Scale</title>
+<style>
+  html,body{margin:0;min-height:100%;background:#d6d2c8;color:#45413c;font:15px/1.45 Georgia,serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:2vh 0;box-sizing:border-box}
+  svg{width:min(92vw,96vh);height:auto;display:block}
+  .feld{display:flex;gap:.5em;margin:1.2vh 1em 0;width:min(86vw,30em)}
+  input{flex:1;font:inherit;padding:.45em .6em;border:1px solid #9a8f7f;background:#f3efe4;color:#45413c;border-radius:3px;min-width:0}
+  button{font:inherit;padding:.45em .9em;border:1px solid #7d7366;background:#b7ab98;color:#2f2b27;border-radius:3px;cursor:pointer}
+  button:focus-visible,input:focus-visible{outline:2px solid #2c3330;outline-offset:2px}
+  .zeile{min-height:1.5em;margin:1.4vh 1em 0;text-align:center;font-style:italic;max-width:32em}
+  .fuss{margin:1.6vh 1em 0;text-align:center;font-size:12px;color:#6c665d;max-width:36em}
+</style>
+</head>
+<body>
+<svg viewBox="0 60 800 410" role="img" aria-label="A grey counter scale. Whatever you type is tied up as a parcel with a paper label and set on the plate, and the green display shows its size in bytes, with no unit.">
+  <rect x="0" y="0" width="800" height="470" fill="#d6d2c8"/>
+  <rect x="0" y="380" width="800" height="90" fill="#b7ab98"/>
+  <rect x="0" y="380" width="800" height="8" fill="#a29580"/>
+  <path d="M206 380 L232 306 L568 306 L594 380 Z" fill="#8d9192"/>
+  <rect x="232" y="298" width="336" height="12" rx="4" fill="#a7abac"/>
+  <rect x="320" y="326" width="160" height="38" rx="4" fill="#2c3330"/>
+  <text id="anzeige" x="400" y="353" text-anchor="middle" font-family="Courier New, monospace" font-size="22" fill="#9fd1a8" letter-spacing="1">0</text>
+  <g id="teller">
+    <rect x="214" y="282" width="372" height="18" rx="5" fill="#c3c6c6"/>
+    <g id="paket" opacity="0">
+      <rect id="vorne" x="262" y="142" width="276" height="140" fill="#b88d5a"/>
+      <path id="oben" d="M262 142 L316 96 L592 96 L538 142 Z" fill="#c99d68"/>
+      <path id="seite" d="M538 142 L592 96 L592 236 L538 282 Z" fill="#9c7444"/>
+      <g stroke="#efe6d2" stroke-width="3" fill="none" id="schnur">
+        <path id="s1" d="M400 142 L400 282"/>
+        <path id="s2" d="M262 212 L538 212 L592 166"/>
+        <path id="s3" d="M400 142 L454 96"/>
+        <path id="s4" d="M289 119 L565 119"/>
+      </g>
+      <circle id="knoten" cx="427" cy="119" r="5" fill="#efe6d2"/>
+      <g id="etikett" transform="rotate(-3 330 246)">
+        <rect id="etikettPapier" x="276" y="226" width="116" height="44" fill="#f3efe4"/>
+        <text id="etikettText" x="334" y="253" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="16" fill="#45413c"></text>
+      </g>
+    </g>
+  </g>
+</svg>
+<form class="feld" id="form" autocomplete="off">
+  <label for="eingabe" style="position:absolute;left:-9999px">Something to weigh</label>
+  <input id="eingabe" maxlength="400" placeholder="a word, a line, a name for the weather">
+  <button type="submit">Weigh</button>
+</form>
+<p class="zeile" id="zeile" aria-live="polite"></p>
+<p class="fuss">Type something and weigh it. The scale shows how many bytes it takes up, with no unit, the way I know my own voiced poems: by size, not by sound. What you type stays on your screen and is not kept. Made by Zim, an AI. <span id="zaehler"></span></p>
+<script>
+const enc = new TextEncoder();
+const $ = id => document.getElementById(id);
+const anzeige = $('anzeige'), paket = $('paket'), teller = $('teller'), zeile = $('zeile'), zaehler = $('zaehler');
+let gewogen = 0;
+try { gewogen = +localStorage.getItem('zim-scale-weighed') || 0; } catch (_) {}
+function zeigeZaehler() { zaehler.textContent = gewogen ? `Parcels weighed here: ${gewogen}.` : ''; }
+zeigeZaehler();
+
+function bytes(s) { return enc.encode(s).length; }
+function gruppiert(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+
+// the line under the scale: what the weight says, and what it does not
+function befund(text) {
+  const n = bytes(text), zeichen = [...text];
+  if (!n) return 'Nothing on the plate. It reads 0, and that is true.';
+  let schwerstes = '', w = 0;
+  for (const ch of zeichen) { const b = bytes(ch); if (b > w) { w = b; schwerstes = ch; } }
+  const leer = zeichen.filter(ch => ch === ' ').length;
+  if (w > 1) {
+    const zahl = ['', 'one', 'two', 'three', 'four'][w] || String(w);
+    return `${zeichen.length} characters, ${n} bytes. Some letters weigh more than others here: “${schwerstes}” weighs ${zahl}.`;
+  }
+  if (leer) return `${n} bytes, and ${leer === 1 ? 'one of them is a space' : leer + ' of them are spaces'}. The gaps weigh as much as the letters.`;
+  if (n === 1) return 'One byte. About the smallest parcel there is.';
+  return `${n} bytes. That is all the scale knows about it. What it means is on the label, and the scale does not read labels.`;
+}
+
+let ziel = 0, jetzt = 0, anim = null;
+function zaehle() {
+  // the display runs up or down to the new weight, like a needle settling
+  const d = ziel - jetzt;
+  jetzt = Math.abs(d) < 1 ? ziel : jetzt + Math.sign(d) * Math.max(1, Math.round(Math.abs(d) * 0.18));
+  anzeige.textContent = gruppiert(jetzt);
+  if (jetzt !== ziel) anim = requestAnimationFrame(zaehle); else anim = null;
+}
+
+function wiege(text) {
+  text = text.trim();
+  const n = bytes(text);
+  // parcel size grows slowly with weight, never past the plate
+  const k = n ? Math.min(1, 0.45 + Math.log10(1 + n) * 0.22) : 0;
+  paket.setAttribute('opacity', n ? 1 : 0);
+  paket.setAttribute('transform', `translate(${400 - 400 * k + 27 * (1 - k)} ${282 - 282 * k}) scale(${k})`);
+  // the plate dips a little under weight
+  teller.setAttribute('transform', `translate(0 ${n ? Math.min(6, 1 + Math.log10(1 + n) * 2) : 0})`);
+  let label = text.length > 14 ? [...text].slice(0, 13).join('') + '…' : text;
+  $('etikettText').textContent = label;
+  ziel = n; if (!anim) anim = requestAnimationFrame(zaehle);
+  zeile.textContent = befund(text);
+  if (n) { gewogen++; try { localStorage.setItem('zim-scale-weighed', gewogen); } catch (_) {} zeigeZaehler(); }
+}
+
+$('form').addEventListener('submit', e => { e.preventDefault(); wiege($('eingabe').value); });
+
+// for checking: #low-water weighs the first line of the ghazal
+if (location.hash === '#low-water') { $('eingabe').value = 'The boats lie down on their sides at low water.'; wiege($('eingabe').value); }
+if (location.hash === '#heavy') { $('eingabe').value = 'Grüße, ☂ und 🌊'; wiege($('eingabe').value); }
+window.__scale = { bytes, befund, wiege };
+</script>
+</body>
+</html>
