@@ -240,7 +240,8 @@ function frame(t) {
   requestAnimationFrame(frame);
 }
 // for checking: #loose starts with the latch already off
-if (/loose/.test(location.hash)) { latched = false; angle = 0.8; }
+if (/loose|out/.test(location.hash)) { latched = false; angle = 0.8; }
+if (/out/.test(location.hash)) { walker = { t: 0.5, dir: 1 }; }
 requestAnimationFrame(frame);
 say('The wind has learned the latch is getting old.');
 

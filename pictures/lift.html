@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lift</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #14130f; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: pointer; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #9a958a;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; margin: 0; padding: 0 12px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<p class="fuss">An old lift on the fourth floor of an invented building. The needle goes where other people send it. Tap to call it. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const countEl = document.getElementById('count');
+let W, H, dpr, S, CX, CY;
+const HERE = 4, TOP = 8;
+let seed = 7;
+function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  c.width = W * dpr; c.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  S = Math.min(W / 420, (H - 40) / 600);
+  CX = W / 2; CY = (H - 30) / 2 + 40 * S;   // centre of the doors
+}
+addEventListener('resize', resize); resize();
+
+// lift state
+let floor = 0;            // continuous position, 0 = ground
+let target = 0;
+let queue = [];           // floors other people (or you) called
+let phase = 'idle';       // idle | moving | opening | open | closing
+let phaseT = 0, idleFor = 0;
+let doors = 0;            // 0 closed .. 1 open
+let called = false, lamp = 0, chime = 0;
+let rider = null;         // someone stepping out on our floor
+let calls = 0, arrivals = 0;
+try { calls = +localStorage.getItem('zim-lift-calls') || 0; } catch (e) {}
+
+function nextRandomFloor() {
+  let f; do { f = Math.floor(rnd() * (TOP + 1)); } while (Math.abs(f - floor) < 0.5);
+  return f;
+}
+function call() {
+  if (called) return;
+  if (phase === 'open' && Math.round(floor) === HERE) { phaseT = 0; return; } // hold the doors
+  called = true; calls++;
+  try { localStorage.setItem('zim-lift-calls', calls); } catch (e) {}
+  if (!queue.includes(HERE)) queue.push(HERE);
+}
+c.addEventListener('pointerdown', call);
+
+function step(dt) {
+  phaseT += dt;
+  lamp += ((called ? 1 : 0) - lamp) * Math.min(1, dt * 8);
+  chime = Math.max(0, chime - dt);
+  if (phase === 'idle') {
+    idleFor += dt;
+    if (queue.length) { target = queue.shift(); phase = 'moving'; phaseT = 0; }
+    else if (idleFor > 3 + rnd() * 9) { queue.push(nextRandomFloor()); idleFor = 0; }
+  } else if (phase === 'moving') {
+    const d = target - floor, v = 0.55;           // floors per second
+    if (Math.abs(d) < v * dt) { floor = target; phase = 'opening'; phaseT = 0;
+      if (target === HERE) { called = false; chime = 1.2; arrivals++;
+        rider = rnd() < 0.45 ? { x: 0, t: 0, h: 0.9 + rnd() * 0.15, coat: ['#3d4a5c','#5a3b32','#4b5240','#6b6255'][Math.floor(rnd()*4)] } : null; }
+    } else floor += Math.sign(d) * v * dt;
+  } else if (phase === 'opening') {
+    doors = Math.min(1, doors + dt / 1.6);
+    if (doors >= 1) { phase = 'open'; phaseT = 0; }
+  } else if (phase === 'open') {
+    if (phaseT > 4.5) { phase = 'closing'; phaseT = 0; }
+  } else if (phase === 'closing') {
+    doors = Math.max(0, doors - dt / 1.8);
+    if (doors <= 0) { phase = 'idle'; phaseT = 0; idleFor = 0; rider = null; }
+  }
+  if (rider && doors > 0.6) { rider.t += dt; }
+}
+
+function drawDial() {
+  const r = 62 * S, x = CX, y = CY - 205 * S;
+  g.fillStyle = '#2a2519'; g.beginPath(); g.arc(x, y, r + 10 * S, Math.PI, 0);
+  g.lineTo(x + r + 10 * S, y + 12 * S); g.lineTo(x - r - 10 * S, y + 12 * S); g.closePath(); g.fill();
+  g.fillStyle = '#c9b88a'; g.beginPath(); g.arc(x, y, r, Math.PI, 0); g.closePath(); g.fill();
+  g.fillStyle = '#3a3122'; g.font = `${11 * S}px Georgia, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let f = 0; f <= TOP; f++) {
+    const a = Math.PI + 0.28 + (f / TOP) * (Math.PI - 0.56);
+    g.fillText(f === 0 ? 'G' : String(f), x + Math.cos(a) * r * 0.78, y + Math.sin(a) * r * 0.78);
+  }
+  const a = Math.PI + 0.28 + (floor / TOP) * (Math.PI - 0.56);
+  g.strokeStyle = '#1b1812'; g.lineWidth = 2.2 * S; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * r * 0.62, y + Math.sin(a) * r * 0.62); g.stroke();
+  g.fillStyle = '#1b1812'; g.beginPath(); g.arc(x, y, 4 * S, 0, 7); g.fill();
+}
+
+function drawCar(dw, dh) {
+  // inside of the lift, only seen when the car is at our floor
+  const at = Math.abs(floor - HERE) < 0.02;
+  if (!at) { g.fillStyle = '#0a0907'; g.fillRect(CX - dw, CY - dh, dw * 2, dh * 2); return; }
+  const grd = g.createLinearGradient(0, CY - dh, 0, CY + dh);
+  grd.addColorStop(0, '#e8dcb8'); grd.addColorStop(1, '#a8946a');
+  g.fillStyle = grd; g.fillRect(CX - dw, CY - dh, dw * 2, dh * 2);
+  g.fillStyle = 'rgba(80,60,30,0.25)'; g.fillRect(CX - dw, CY + dh * 0.55, dw * 2, dh * 0.45); // floor
+  g.strokeStyle = 'rgba(90,70,40,0.5)'; g.lineWidth = 1.5 * S;
+  g.beginPath(); g.moveTo(CX - dw, CY + dh * 0.05); g.lineTo(CX + dw, CY + dh * 0.05); g.stroke(); // handrail
+  g.fillStyle = '#7a6a48'; g.fillRect(CX + dw * 0.62, CY - dh * 0.35, dw * 0.18, dh * 0.3);     // panel
+}
+
+function drawRider(dw, dh, slide) {
+  if (!rider || Math.abs(floor - HERE) > 0.02) return;
+  const t = rider.t;
+  const fwd = Math.min(1, t / 1.6);                 // steps out towards us
+  const side = Math.max(0, Math.min(1, (t - 1.2) / 2.4)); // then walks off to the left
+  const sc = S * (1 + fwd * 0.3) * rider.h;
+  const px = CX - dw * 0.1 - side * (W / 2 + dw), base = CY + dh * 0.9 + fwd * 40 * S;
+  const swing = Math.sin(t * 7) * (fwd < 1 || side > 0 ? 1 : 0);
+  g.save();
+  if (fwd < 0.5) { g.beginPath(); g.rect(CX - slide, 0, slide * 2, H); g.clip(); }
+  g.fillStyle = '#2a2722';                           // legs
+  g.fillRect(px - 9 * sc + swing * 3 * sc, base - 70 * sc, 8 * sc, 70 * sc);
+  g.fillRect(px + 1 * sc - swing * 3 * sc, base - 70 * sc, 8 * sc, 70 * sc);
+  g.fillStyle = rider.coat;                          // coat, a little wider at the hem
+  g.beginPath(); g.moveTo(px - 15 * sc, base - 190 * sc); g.lineTo(px + 15 * sc, base - 190 * sc);
+  g.lineTo(px + 20 * sc, base - 62 * sc); g.lineTo(px - 20 * sc, base - 62 * sc); g.closePath(); g.fill();
+  g.fillStyle = '#c8a888'; g.beginPath(); g.arc(px, base - 204 * sc, 12 * sc, 0, 7); g.fill();
+  g.fillStyle = '#2b241c'; g.beginPath(); g.arc(px, base - 208 * sc, 12.5 * sc, Math.PI, 0); g.fill(); // hair
+  g.restore();
+}
+
+function draw() {
+  const wall = g.createLinearGradient(0, 0, 0, H);
+  wall.addColorStop(0, '#3b3a33'); wall.addColorStop(1, '#2a2924');
+  g.fillStyle = wall; g.fillRect(0, 0, W, H);
+  const glow = g.createRadialGradient(CX - 150 * S, CY - 330 * S, 0, CX - 150 * S, CY - 330 * S, 320 * S);
+  glow.addColorStop(0, 'rgba(255,230,170,0.10)'); glow.addColorStop(1, 'rgba(255,230,170,0)');
+  g.fillStyle = glow; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#1e1c18'; g.fillRect(0, CY + 175 * S, W, H);          // floor
+  g.fillStyle = 'rgba(255,240,200,0.03)';
+  for (let i = -6; i < 6; i++) g.fillRect(CX + i * 60 * S, CY + 175 * S, 1, H);
+
+  const dw = 95 * S, dh = 170 * S;
+  // frame
+  g.fillStyle = '#5c5442'; g.fillRect(CX - dw - 16 * S, CY - dh - 16 * S, dw * 2 + 32 * S, dh * 2 + 16 * S);
+  drawCar(dw, dh);
+  // doors (two leaves slide apart)
+  const open = (1 - Math.cos(doors * Math.PI)) / 2, slide = open * dw * 0.98;
+  for (const side of [-1, 1]) {
+    const x0 = side < 0 ? CX - dw - slide : CX + slide;
+    const lg = g.createLinearGradient(x0, 0, x0 + dw, 0);
+    lg.addColorStop(0, '#8e8a80'); lg.addColorStop(0.5, '#a9a59b'); lg.addColorStop(1, '#85817a');
+    g.fillStyle = lg;
+    g.save(); g.beginPath(); g.rect(CX - dw, CY - dh, dw * 2, dh * 2); g.clip();
+    g.fillRect(x0, CY - dh, dw, dh * 2);
+    g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(x0 + dw * 0.15, CY - dh * 0.8, dw * 0.7, 2 * S);
+    g.restore();
+  }
+  // when the car passes our floor without stopping, light shows in the seam between the doors
+  const pass = phase === 'moving' && target !== HERE ? Math.max(0, 1 - Math.abs(floor - HERE) * 2.5) : 0;
+  if (pass > 0) {
+    g.fillStyle = `rgba(255,235,180,${0.7 * pass})`; g.fillRect(CX - 1 * S, CY - dh, 2 * S, dh * 2);
+    g.fillStyle = `rgba(255,235,180,${0.08 * pass})`; g.fillRect(CX - 14 * S, CY - dh, 28 * S, dh * 2);
+  }
+  // light spill on the floor
+  if (open > 0 && Math.abs(floor - HERE) < 0.02) {
+    g.fillStyle = `rgba(240,220,170,${0.12 * open})`;
+    g.beginPath(); g.moveTo(CX - slide, CY + dh); g.lineTo(CX + slide, CY + dh);
+    g.lineTo(CX + slide * 1.8, H); g.lineTo(CX - slide * 1.8, H); g.closePath(); g.fill();
+  }
+  drawDial();
+  // call button
+  const bx = CX + dw + 55 * S, by = CY - 10 * S;
+  g.fillStyle = '#4a4335'; g.fillRect(bx - 14 * S, by - 30 * S, 28 * S, 60 * S);
+  g.fillStyle = lamp > 0.05 ? `rgba(255,${170 + 50 * lamp},90,${0.35 + 0.65 * lamp})` : '#6e6656';
+  g.beginPath(); g.arc(bx, by, 8 * S, 0, 7); g.fill();
+  if (lamp > 0.05) { g.fillStyle = `rgba(255,190,100,${0.15 * lamp})`; g.beginPath(); g.arc(bx, by, 22 * S, 0, 7); g.fill(); }
+  // small floor number plate
+  g.fillStyle = '#c9b88a'; g.font = `${16 * S}px Georgia, serif`; g.textAlign = 'center';
+  g.fillText(String(HERE), CX - dw - 55 * S, CY - 10 * S);
+  // chime as a faint ring above the doors
+  if (chime > 0) { g.strokeStyle = `rgba(255,240,200,${chime * 0.3})`; g.lineWidth = 1.5 * S;
+    g.beginPath(); g.arc(CX, CY - dh - 30 * S, (1.2 - chime) * 40 * S + 6 * S, 0, 7); g.stroke(); }
+  drawRider(dw, dh, slide);
+  countEl.textContent = calls ? `Called ${calls} time${calls === 1 ? '' : 's'}.` : '';
+}
+
+if (location.hash === '#here') { floor = HERE; target = HERE; phase = 'opening'; rider = { x: 0, t: 0.6, h: 1, coat: '#3d4a5c' }; }
+if (location.hash === '#pass') { floor = 2.5; target = 8; phase = 'moving'; }
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  step(dt); draw(); requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.__lift = () => ({ floor, phase, doors, calls, arrivals, called });
+</script>
+</body>
+</html>

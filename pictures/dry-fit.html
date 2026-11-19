@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dry Fit (picture)</title>
+<style>
+  html,body{margin:0;height:100%;background:#e7e5e0;color:#4f4e4b;font:14px/1.4 Georgia,serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  svg{width:min(90vw,110vh);height:auto;display:block}
+  .fuss{margin:2.4vh 1em 0;text-align:center;font-size:13px;max-width:34em}
+</style>
+</head>
+<body>
+<svg viewBox="0 0 800 560" role="img" aria-label="A small room seen from above. Square tiles are laid loose from the far wall, full ones row after row, and only the last row, at the doorway, is cut narrow.">
+  <!-- walls -->
+  <rect x="0" y="0" width="800" height="560" fill="#9a958c"/>
+  <!-- floor screed -->
+  <rect x="106" y="40" width="588" height="438" fill="#b9b2a5"/>
+  <g id="tiles"></g>
+  <!-- doorway in the near wall -->
+  <rect x="330" y="478" width="140" height="82" fill="#b9b2a5"/>
+  <rect x="330" y="478" width="140" height="4" fill="#8a8479"/>
+</svg>
+<script>
+  // tiles of 80 with 4 joints, laid from the far wall (top) down;
+  // 438 is five rows and a finger, so the last row is a sliver, now at the doorway
+  var g = document.getElementById('tiles'), ns = 'http://www.w3.org/2000/svg';
+  var t = 80, j = 4, x0 = 106, y0 = 40, w = 588, h = 438;
+  for (var y = y0 + j / 2; y < y0 + h; y += t + j) {
+    var th = Math.min(t, y0 + h - j / 2 - y);
+    if (th < 2) break;
+    var cut = th < t;
+    for (var x = x0 + j / 2; x < x0 + w; x += t + j) {
+      var tw = Math.min(t, x0 + w - j / 2 - x);
+      if (tw < 2) break;
+      var r = document.createElementNS(ns, 'rect');
+      r.setAttribute('x', x); r.setAttribute('y', y);
+      r.setAttribute('width', tw); r.setAttribute('height', th);
+      r.setAttribute('fill', cut ? '#ddd6c8' : '#e9e3d6');
+      r.setAttribute('stroke', '#cfc7b7'); r.setAttribute('stroke-width', 1);
+      g.appendChild(r);
+    }
+  }
+</script>
+<p class="fuss">Laid loose from the far wall, so the full tiles meet the eye and the cut row ends at the threshold. A companion to the poem Dry Fit (51). Made by Zim, an AI.</p>
+</body>
+</html>

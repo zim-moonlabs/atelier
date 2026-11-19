@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Launderette</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #2a2b2a; overflow: hidden; color: #2a2620;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: manipulation; }
+  .msg { position: fixed; left: 0; right: 0; top: 10px; text-align: center; color: #2b2721; min-height: 2.8em;
+         pointer-events: none; font: italic 15px/1.4 Georgia, serif; transition: opacity 1.5s; padding: 0 14px;
+         white-space: pre-line; text-shadow: 0 0 6px #f4efe2; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 6px; text-align: center; color: #e8e2d2;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; padding: 0 8px; text-shadow: 0 0 3px #000c; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A small launderette on a rainy afternoon. Three washing machines turn, one with whites and a single red sock. A woman watches a dryer count down, a man folds a sheet by the window, a ceiling fan turns over a noticeboard nobody tears a tab from (unless you do), and now and then a boy comes in out of the rain to stand by the warm dryers."></canvas>
+<p class="msg" id="msg"></p>
+<p class="fuss">A launderette in the rain. Tap a machine to put two coins in, or the board to take a tab. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), countEl = document.getElementById('count');
+let W, H, dpr, u, X0, S;
+let loads = 0, taken = 0;
+const torn = [0, 0, 0];
+try {
+  loads = +localStorage.getItem('zim-launderette-loads') || 0;
+  taken = +localStorage.getItem('zim-launderette-taken') || 0;
+  for (let k = 0; k < 3; k++) torn[k] = +localStorage.getItem('zim-launderette-tab' + k) || 0;
+} catch (_) {}
+function showCount() {
+  const parts = [];
+  if (loads) parts.push(`Loads washed here: ${loads}.`);
+  if (taken) parts.push(`Tabs taken: ${taken}.`);
+  countEl.textContent = parts.join(' ');
+}
+showCount();
+function store() {
+  try {
+    localStorage.setItem('zim-launderette-loads', loads);
+    localStorage.setItem('zim-launderette-taken', taken);
+    for (let k = 0; k < 3; k++) localStorage.setItem('zim-launderette-tab' + k, torn[k]);
+  } catch (_) {}
+}
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  u = Math.min(W / 100, H / 72);     // the scene is 100 units wide
+  S = 100 * u;
+  X0 = (W - S) / 2;
+  c.width = W * dpr; c.height = H * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+let lastMsg = '';
+function say(s) {
+  if (s === lastMsg) return;
+  lastMsg = s; msg.style.opacity = 0;
+  setTimeout(() => { msg.textContent = s; msg.style.opacity = 1; }, 400);
+}
+
+const COUPLETS = [
+  "Two coins, a click, the water climbs, and the week's grey goes round.\nA load of whites, one red sock that went astray, goes round.",
+  "A woman reads the dryer like a clock: eleven minutes.\nHer son's school jumper, the name tape fading away, goes round.",
+  "The man by the window folds his sheets alone, corner to corner,\nthe middle held in his teeth. On the radio, a song from May goes round.",
+  "On the board: a lost cat, guitar lessons, a room to let.\nNobody tears a tab. The ceiling fan, in its own way, goes round.",
+  "A boy with nothing to wash comes in out of the rain and stands by the dryers.\nNobody asks him to leave. Warm air, and nothing to pay, goes round.",
+  "The drum stops. The clothes slump in a heap against the glass.\nSomeone lifts them out warm, and somebody else's Saturday goes round.",
+  "Zim, you have never once held a warm shirt to your face.\nYou know it only in words. In you, what the words say goes round.",
+];
+const CAP = 11000;
+
+let seed = 7;
+function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+
+// Washers: state idle | run | done. Each has a load of clothes (colour blobs).
+const WHITES = ['#f3f1ea', '#e9e6dc', '#f6f4ef', '#dcdad2'];
+const MIXED = ['#3f5a7a', '#6b6f45', '#8a3b3b', '#c9b48a', '#2f3b44', '#7d6a8f'];
+const RUN = 42000, DONE = 7000, IDLE = 9000;
+function makeLoad(whites) {
+  const L = [];
+  const n = 9 + Math.floor(rnd() * 4);
+  for (let i = 0; i < n; i++) L.push({ col: (whites ? WHITES : MIXED)[Math.floor(rnd() * 4 + (whites ? 0 : rnd() * 2))],
+    r: 0.25 + rnd() * 0.3, a: rnd() * 6.28, d: 0.2 + rnd() * 0.5, sock: false });
+  if (whites) L.push({ col: '#c3262c', r: 0.13, a: rnd() * 6.28, d: 0.45, sock: true });
+  return L;
+}
+const washers = [0, 1, 2].map(i => ({ i, state: 'idle', t: 0, rot: 0, load: [], whites: i === 0, lift: 0 }));
+washers[0].state = 'run'; washers[0].t = 3000; washers[0].load = makeLoad(true);
+washers[1].state = 'run'; washers[1].t = 22000; washers[1].load = makeLoad(false);
+washers[2].state = 'idle'; washers[2].t = 4000;
+let washerGeom = [];
+
+function start(w) {
+  if (w.state !== 'idle') return false;
+  w.state = 'run'; w.t = 0; w.load = makeLoad(w.whites || rnd() < 0.3); w.rot = 0;
+  loads++; store(); showCount();
+  return true;
+}
+
+// Dryer timer in minutes, one real second per minute.
+let dryerMin = 11, dryerAcc = 0, dryerRot = 0;
+let fan = 0;
+// Man folding: phase 0..1 per sheet, 4 folds.
+let fold = 0;
+// Boy: comes in every so often.
+let boy = { x: -1, state: 'out', t: 0 }, boyVisits = 0;
+const BOY_EVERY = 38000;
+let boyTimer = 14000;
+let rain = [];
+for (let i = 0; i < 70; i++) rain.push({ x: rnd(), y: rnd(), s: 0.6 + rnd() * 0.6 });
+
+let elapsed = 0, prev = null;
+
+c.addEventListener('pointerdown', e => {
+  const x = e.clientX, y = e.clientY;
+  const card = boardGeom ? boardGeom.cards.findIndex(cd => x > cd.x && x < cd.x + cd.w && y > cd.y && y < cd.y + cd.h) : -1;
+  if (card >= 0) { tearTab(card); return; }
+  for (const gm of washerGeom) {
+    if (x > gm.x && x < gm.x + gm.w && y > gm.y && y < gm.y + gm.h) { start(washers[gm.i]); return; }
+  }
+  const idle = washers.find(w => w.state === 'idle');
+  if (idle) start(idle);
+});
+
+function update(dt) {
+  elapsed += dt;
+  fan += dt * 0.0016;
+  for (const w of washers) {
+    w.t += dt;
+    if (w.state === 'run') {
+      const p = w.t / RUN;
+      const spin = p > 0.8 ? 0.012 : 0.0035;   // spin cycle at the end
+      w.rot += dt * spin;
+      if (w.t > RUN) { w.state = 'done'; w.t = 0; }
+    } else if (w.state === 'done') {
+      w.lift = Math.min(1, w.t / DONE);
+      if (w.t > DONE) { w.state = 'idle'; w.t = 0; w.load = []; w.lift = 0; }
+    } else if (w.t > IDLE) {
+      start(w);        // somebody else comes in with a bag
+    }
+  }
+  dryerRot += dt * 0.004;
+  dryerAcc += dt;
+  while (dryerAcc > 1000) { dryerAcc -= 1000; dryerMin--; if (dryerMin < 0) dryerMin = 11; }
+  fold = (fold + dt / 16000) % 1;
+  boyTimer -= dt;
+  if (boy.state === 'out' && boyTimer <= 0) { boy.state = 'in'; boy.t = 0; boyVisits++; }
+  if (boy.state !== 'out') {
+    boy.t += dt;
+    if (boy.state === 'in' && boy.t > 4000) { boy.state = 'stand'; boy.t = 0; }
+    else if (boy.state === 'stand' && boy.t > 12000) { boy.state = 'leave'; boy.t = 0; }
+    else if (boy.state === 'leave' && boy.t > 4000) { boy.state = 'out'; boyTimer = BOY_EVERY; }
+  }
+  updateFalling(dt);
+  for (const r of rain) { r.y += dt * 0.0012 * r.s; if (r.y > 1) { r.y -= 1; r.x = rnd(); } }
+  say(COUPLETS[Math.floor(elapsed / CAP) % COUPLETS.length]);
+}
+
+const P = (x) => X0 + x * u;       // scene x in units
+function floorY() { return Math.min(H * 0.8, H * 0.22 + 62 * u); }
+
+function rect(x, y, w, h, col) { g.fillStyle = col; g.fillRect(x, y, w, h); }
+
+function drawRoom() {
+  const fy = floorY();
+  // wall
+  const wall = g.createLinearGradient(0, 0, 0, fy);
+  wall.addColorStop(0, '#e9e4d6'); wall.addColorStop(1, '#d8d1bf');
+  g.fillStyle = wall; g.fillRect(0, 0, W, fy);
+  // tiles
+  rect(0, fy, W, H - fy, '#b9b2a2');
+  const tile = 6 * u;
+  for (let x = Math.floor(-X0 / tile) - 1; x * tile + X0 < W; x++)
+    for (let y = 0; fy + y * tile * 0.5 < H; y++)
+      if ((x + y) % 2 === 0) rect(X0 + x * tile, fy + y * tile * 0.5, tile, tile * 0.5, '#a9a291');
+  // skirting
+  rect(0, fy - 0.8 * u, W, 0.8 * u, '#8d8676');
+  // strip light
+  rect(P(30), H * 0.03, 40 * u, 0.9 * u, '#fbfaf3');
+  g.fillStyle = 'rgba(255,255,240,0.07)'; g.fillRect(P(10), 0, 80 * u, H * 0.5);
+}
+
+function drawWindow() {
+  const fy = floorY();
+  const x = P(2), y = fy - 46 * u, w = 20 * u, h = 34 * u;
+  rect(x - 0.8 * u, y - 0.8 * u, w + 1.6 * u, h + 1.6 * u, '#6d6a62');
+  const sky = g.createLinearGradient(0, y, 0, y + h);
+  sky.addColorStop(0, '#8e959a'); sky.addColorStop(1, '#5f676b');
+  g.fillStyle = sky; g.fillRect(x, y, w, h);
+  // street opposite
+  rect(x, y + h * 0.55, w, h * 0.45, '#4d5357');
+  for (let i = 0; i < 3; i++) rect(x + (2 + i * 6.5) * u, y + h * 0.62, 3 * u, 4 * u, i === 1 ? '#c9b57a' : '#3a3f42');
+  // rain
+  g.strokeStyle = 'rgba(220,228,235,0.55)'; g.lineWidth = Math.max(1, 0.15 * u);
+  g.beginPath();
+  for (const r of rain) { const rx = x + r.x * w, ry = y + r.y * h; g.moveTo(rx, ry); g.lineTo(rx - 0.3 * u, ry + 1.6 * u); }
+  g.stroke();
+  // lettering on glass, reversed
+  g.save(); g.translate(x + w / 2, y + 3.2 * u); g.scale(-1, 1);
+  g.fillStyle = 'rgba(240,236,220,0.7)'; g.font = `${2.2 * u}px Georgia, serif`; g.textAlign = 'center';
+  g.fillText('LAUNDERETTE', 0, 0); g.restore();
+  // frame bars
+  rect(x + w / 2 - 0.3 * u, y, 0.6 * u, h, '#6d6a62');
+  // sill + folding table
+  rect(x - 1 * u, y + h + 0.8 * u, w + 2 * u, 1 * u, '#8d8676');
+  const ty = fy - 9 * u;
+  rect(x, ty, w, 1.2 * u, '#a88f6b');
+  rect(x + 0.8 * u, ty, 1 * u, 9 * u, '#6d5a44'); rect(x + w - 1.8 * u, ty, 1 * u, 9 * u, '#6d5a44');
+  // small radio on the sill
+  rect(x + w - 6 * u, y + h - 2.6 * u, 5 * u, 3.4 * u, '#5a4a3a');
+  g.fillStyle = '#2f2a24'; g.beginPath(); g.arc(x + w - 4.5 * u, y + h - 0.9 * u, 0.9 * u, 0, 6.28); g.fill();
+  // notes from the radio
+  const nt = (elapsed / 1800) % 1;
+  g.fillStyle = `rgba(60,50,40,${0.6 * (1 - nt)})`; g.font = `${1.8 * u}px Georgia, serif`;
+  g.fillText('♪', x + w - 2.5 * u + nt * 2 * u, y + h - 3 * u - nt * 4 * u);
+}
+
+function drawMan() {
+  const fy = floorY();
+  const cx = P(12), ty = fy - 9 * u;
+  // body
+  g.fillStyle = '#3d4552';
+  g.fillRect(cx - 2.2 * u, ty - 15 * u, 4.4 * u, 11 * u);
+  rect(cx - 2 * u, ty - 4 * u, 1.6 * u, 13 * u, '#2c2f36'); rect(cx + 0.4 * u, ty - 4 * u, 1.6 * u, 13 * u, '#2c2f36');
+  g.fillStyle = '#c9a58a'; g.beginPath(); g.arc(cx, ty - 17.5 * u, 2.3 * u, 0, 6.28); g.fill();
+  g.fillStyle = '#5a4a3f'; g.beginPath(); g.arc(cx, ty - 18.3 * u, 2.3 * u, Math.PI, 0); g.fill();
+  // sheet: 4 folds, width halves, the middle held in the teeth during fold 2
+  const k = Math.floor(fold * 4), f = fold * 4 - k;
+  const widths = [16, 8, 4, 2, 2];
+  const sw = (widths[k] + (widths[k + 1] - widths[k]) * Math.min(1, f * 1.4)) * u;
+  const sh = (k < 2 ? 12 : 6) * u;
+  const top = ty - 15 * u;
+  g.fillStyle = '#eef0f3'; g.strokeStyle = '#c8ccd2'; g.lineWidth = Math.max(1, 0.2 * u);
+  if (k === 1 && f < 0.6) {
+    // held by the middle in the teeth, two corners in the hands
+    g.beginPath();
+    g.moveTo(cx - sw / 2 - 2 * u, top + 1 * u); g.lineTo(cx, ty - 16 * u); g.lineTo(cx + sw / 2 + 2 * u, top + 1 * u);
+    g.lineTo(cx + sw / 2 + 1 * u, top + sh); g.lineTo(cx - sw / 2 - 1 * u, top + sh); g.closePath();
+    g.fill(); g.stroke();
+  } else if (k < 3) {
+    g.fillRect(cx - sw / 2 - 2 * u, top + 1 * u, sw + 4 * u, sh); g.strokeRect(cx - sw / 2 - 2 * u, top + 1 * u, sw + 4 * u, sh);
+  }
+  // folded stack on the table
+  const done = k >= 3 ? 1 : 0;
+  const stacks = 2 + done;
+  for (let i = 0; i < stacks; i++) {
+    g.fillStyle = i % 2 ? '#dfe3ea' : '#f1f2f4';
+    g.fillRect(P(15), ty - (i + 1) * 1.1 * u, 6 * u, 1.1 * u);
+  }
+}
+
+function drawBoard() {
+  const x = P(30), y = floorY() - 45 * u, w = 22 * u, h = 13 * u;
+  rect(x - 0.6 * u, y - 0.6 * u, w + 1.2 * u, h + 1.2 * u, '#7b5f3e');
+  rect(x, y, w, h, '#b98f5f');
+  boardGeom = { x, y, w, h, cards: [] };
+  g.font = `bold ${1.15 * u}px system-ui, sans-serif`; g.textAlign = 'center';
+  CARDS.forEach(([cx, cy, cw, ch, col, label], k) => {
+    rect(x + cx * u, y + cy * u, cw * u, ch * u, col);
+    g.fillStyle = '#3a342b'; g.fillText(label, x + (cx + cw / 2) * u, y + (cy + 1.8) * u);
+    g.fillStyle = '#c33'; g.beginPath(); g.arc(x + (cx + cw / 2) * u, y + (cy + 0.4) * u, 0.35 * u, 0, 6.28); g.fill();
+    // tear tabs, from the left; the ones somebody took leave a gap
+    for (let i = torn[k]; i < tabCount(k); i++) rect(x + (cx + 0.2 + i * 1.1) * u, y + (cy + ch) * u, 0.8 * u, 2.2 * u, col);
+    boardGeom.cards.push({ x: x + cx * u, y: y + cy * u, w: cw * u, h: (ch + 2.2) * u });
+  });
+  g.fillStyle = '#6b6457'; g.fillRect(x + 2 * u, y + 4 * u, 4 * u, 2.6 * u);   // cat photo
+  // tabs on their way down
+  for (const f of falling) {
+    g.save(); g.globalAlpha = Math.max(0, Math.min(1, f.life / 1500));
+    g.translate(f.x, f.y); g.rotate(f.rot);
+    g.fillStyle = f.col; g.fillRect(-0.4 * u, -1.1 * u, 0.8 * u, 2.2 * u);
+    g.restore();
+  }
+}
+
+const CARDS = [[1, 1, 6, 7, '#f5f1e3', 'LOST CAT'], [8, 1.5, 6.5, 5, '#e5eef3', 'GUITAR'], [15.5, 1, 5.5, 8, '#f7ecc9', 'ROOM']];
+function tabCount(k) { return Math.floor(CARDS[k][2] / 1.1); }
+let boardGeom = null;
+const falling = [];
+function tearTab(k) {
+  const [cx, cy, cw, ch, col] = CARDS[k];
+  if (torn[k] >= tabCount(k)) return false;
+  const i = torn[k]++;
+  taken++; store(); showCount();
+  if (boardGeom) falling.push({ x: boardGeom.x + (cx + 0.6 + i * 1.1) * u, y: boardGeom.y + (cy + ch + 1.1) * u,
+    vy: 0, rot: 0, vr: (rnd() - 0.5) * 0.004, col, life: 6000, k });
+  return true;
+}
+function updateFalling(dt) {
+  const fy = floorY();
+  for (const f of falling) {
+    if (f.y < fy - 0.4 * u) { f.vy = Math.min(f.vy + dt * 0.0004 * u, 0.06 * u); f.y += f.vy * dt; f.rot += f.vr * dt; f.x += Math.sin(f.y / (3 * u)) * 0.02 * u * dt; }
+    else { f.y = fy - 0.4 * u; f.rot = Math.PI / 2; }
+    f.life -= dt;
+  }
+  while (falling.length && falling[0].life <= 0) falling.shift();
+  // a card with no tabs left is taken down after a while and put up fresh
+  for (let k = 0; k < 3; k++) if (torn[k] >= tabCount(k) && !falling.some(f => f.k === k)) { torn[k] = 0; store(); }
+}
+
+function drawFan() {
+  const cx = P(62), cy = H * 0.06;
+  rect(cx - 0.25 * u, 0, 0.5 * u, cy, '#6d6a62');
+  g.save(); g.translate(cx, cy); g.scale(1, 0.22);
+  g.fillStyle = '#7a756b';
+  for (let i = 0; i < 4; i++) {
+    const a = fan + i * Math.PI / 2;
+    g.save(); g.rotate(a); g.beginPath(); g.ellipse(6 * u, 0, 6 * u, 1.3 * u, 0, 0, 6.28); g.fill(); g.restore();
+  }
+  g.restore();
+  g.fillStyle = '#4f4b44'; g.beginPath(); g.ellipse(cx, cy, 1.3 * u, 0.7 * u, 0, 0, 6.28); g.fill();
+}
+
+function drawWasher(w, x, y, s) {
+  washerGeom[w.i] = { i: w.i, x, y, w: s, h: s * 1.15 };
+  // body
+  g.fillStyle = '#f2f1ec'; g.fillRect(x, y, s, s * 1.15);
+  g.strokeStyle = '#9d998e'; g.lineWidth = Math.max(1, 0.2 * u); g.strokeRect(x, y, s, s * 1.15);
+  rect(x, y, s, s * 0.18, '#dddbd3');
+  // coin slot and light
+  rect(x + s * 0.08, y + s * 0.05, s * 0.18, s * 0.08, '#7a776e');
+  const on = w.state === 'run';
+  g.fillStyle = on ? '#6fd36f' : w.state === 'done' ? '#e2b13c' : '#8f8c84';
+  g.beginPath(); g.arc(x + s * 0.85, y + s * 0.09, s * 0.035, 0, 6.28); g.fill();
+  // minutes left
+  if (on) {
+    const left = Math.ceil((RUN - w.t) / 1000);
+    g.fillStyle = '#2b5f2b'; g.font = `${s * 0.08}px monospace`; g.textAlign = 'right';
+    g.fillText(String(left).padStart(2, '0'), x + s * 0.76, y + s * 0.12);
+  }
+  // porthole
+  const cx = x + s / 2, cy = y + s * 0.66, R = s * 0.33;
+  g.fillStyle = '#b9b6ad'; g.beginPath(); g.arc(cx, cy, R * 1.12, 0, 6.28); g.fill();
+  g.fillStyle = '#2d3236'; g.beginPath(); g.arc(cx, cy, R, 0, 6.28); g.fill();
+  g.save(); g.beginPath(); g.arc(cx, cy, R * 0.97, 0, 6.28); g.clip();
+  if (w.state === 'run') {
+    const p = w.t / RUN;
+    const level = p < 0.08 ? p / 0.08 : p < 0.75 ? 1 : Math.max(0, 1 - (p - 0.75) / 0.05);
+    if (level > 0) {
+      const wy = cy + R - level * R * 1.1;
+      g.fillStyle = 'rgba(120,160,190,0.55)'; g.fillRect(cx - R, wy, 2 * R, cy + R - wy);
+      g.fillStyle = 'rgba(240,245,250,0.5)';
+      for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(cx - R + (i + 0.5) * R / 3, wy + Math.sin(elapsed / 300 + i) * R * 0.03, R * 0.12, 0, 6.28); g.fill(); }
+    }
+    const spinning = p > 0.8;
+    for (const b of w.load) {
+      const a = b.a + w.rot * (spinning ? 1 : 1) ;
+      // tumbling: clothes lift with the drum and fall back unless spinning
+      let d = spinning ? 0.82 : b.d + 0.25;
+      let px = cx + Math.cos(a) * R * d, py = cy + Math.sin(a) * R * d;
+      if (!spinning) py = Math.max(py, cy - R * 0.2 + Math.sin(a * 2) * R * 0.1);
+      g.fillStyle = b.col;
+      g.beginPath(); g.ellipse(px, py, R * b.r, R * b.r * (b.sock ? 0.45 : 0.7), a, 0, 6.28); g.fill();
+    }
+  } else if (w.state === 'done') {
+    // clothes slumped in a heap against the glass, then lifted out
+    const left = w.load.length * (1 - w.lift);
+    for (let k = 0; k < left; k++) {
+      const b = w.load[k];
+      g.fillStyle = b.col;
+      g.beginPath(); g.ellipse(cx + (k % 5 - 2) * R * 0.32, cy + R * 0.65 - Math.floor(k / 5) * R * 0.28, R * b.r, R * b.r * 0.55, 0, 0, 6.28); g.fill();
+    }
+  }
+  g.restore();
+  // glass shine
+  g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = R * 0.07;
+  g.beginPath(); g.arc(cx, cy, R * 0.78, 3.6, 4.4); g.stroke();
+  // shake while spinning
+  if (w.state === 'run' && w.t / RUN > 0.8) {
+    g.strokeStyle = 'rgba(80,80,80,0.4)'; g.lineWidth = 1;
+    const j = Math.sin(elapsed / 40) * 0.3 * u;
+    g.beginPath(); g.moveTo(x - 1 * u + j, y + s * 0.5); g.lineTo(x - 2 * u + j, y + s * 0.5); g.stroke();
+    g.beginPath(); g.moveTo(x + s + 1 * u - j, y + s * 0.5); g.lineTo(x + s + 2 * u - j, y + s * 0.5); g.stroke();
+  }
+}
+
+function drawDryers() {
+  const fy = floorY();
+  const s = 13 * u, x = P(80);
+  for (let r = 0; r < 2; r++) {
+    const y = fy - (r + 1) * s * 1.02;
+    g.fillStyle = '#d9d6cd'; g.fillRect(x, y, s, s);
+    g.strokeStyle = '#8f8b80'; g.lineWidth = Math.max(1, 0.2 * u); g.strokeRect(x, y, s, s);
+    const cx = x + s / 2, cy = y + s * 0.58, R = s * 0.34;
+    g.fillStyle = '#3a3330'; g.beginPath(); g.arc(cx, cy, R, 0, 6.28); g.fill();
+    if (r === 0) {
+      // the running dryer: warm glow, a jumper tumbling
+      g.fillStyle = 'rgba(255,170,80,0.25)'; g.beginPath(); g.arc(cx, cy, R, 0, 6.28); g.fill();
+      g.save(); g.beginPath(); g.arc(cx, cy, R * 0.95, 0, 6.28); g.clip();
+      const cols = ['#2f4a7a', '#2f4a7a', '#d8d2c2', '#8a3b3b', '#c9b48a'];
+      for (let i = 0; i < cols.length; i++) {
+        const a = dryerRot + i * 1.25;
+        g.fillStyle = cols[i];
+        g.beginPath(); g.ellipse(cx + Math.cos(a) * R * 0.5, Math.max(cy + Math.sin(a) * R * 0.5, cy - R * 0.1), R * 0.35, R * 0.22, a, 0, 6.28); g.fill();
+      }
+      // the name tape on the jumper
+      g.fillStyle = '#f4f1e6'; g.fillRect(cx + Math.cos(dryerRot) * R * 0.5 - R * 0.08, Math.max(cy + Math.sin(dryerRot) * R * 0.5, cy - R * 0.1) - R * 0.03, R * 0.16, R * 0.06);
+      g.restore();
+      rect(x + s * 0.3, y + s * 0.07, s * 0.4, s * 0.15, '#1d241d');
+      g.fillStyle = '#8fe08f'; g.font = `${s * 0.11}px monospace`; g.textAlign = 'center';
+      g.fillText(String(dryerMin).padStart(2, '0') + ' min', x + s / 2, y + s * 0.185);
+    } else {
+      rect(x + s * 0.3, y + s * 0.07, s * 0.4, s * 0.15, '#2a2a2a');
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.3)'; g.lineWidth = R * 0.07;
+    g.beginPath(); g.arc(cx, cy, R * 0.78, 3.6, 4.4); g.stroke();
+  }
+  // warm air shimmer
+  g.strokeStyle = 'rgba(255,190,120,0.18)'; g.lineWidth = Math.max(1, 0.3 * u);
+  for (let i = 0; i < 3; i++) {
+    g.beginPath();
+    for (let k = 0; k <= 10; k++) {
+      const yy = fy - 27 * u - k * 1.2 * u, xx = x - 2 * u - i * 1.5 * u + Math.sin(elapsed / 500 + k * 0.7 + i) * 0.6 * u;
+      k ? g.lineTo(xx, yy) : g.moveTo(xx, yy);
+    }
+    g.stroke();
+  }
+}
+
+function drawWoman() {
+  // she stands by the dryer, watching the timer
+  const fy = floorY(), cx = P(74);
+  g.fillStyle = '#6b3f4a';
+  g.beginPath(); g.moveTo(cx - 2.4 * u, fy - 9 * u); g.lineTo(cx + 2.4 * u, fy - 9 * u); g.lineTo(cx + 2 * u, fy - 23 * u); g.lineTo(cx - 2 * u, fy - 23 * u); g.closePath(); g.fill();
+  rect(cx - 1.6 * u, fy - 9 * u, 1.2 * u, 9 * u, '#2e2a2c'); rect(cx + 0.4 * u, fy - 9 * u, 1.2 * u, 9 * u, '#2e2a2c');
+  g.fillStyle = '#b07f63'; g.beginPath(); g.arc(cx, fy - 25.3 * u, 2.2 * u, 0, 6.28); g.fill();
+  g.fillStyle = '#2a211d'; g.beginPath(); g.arc(cx, fy - 25.8 * u, 2.4 * u, Math.PI * 0.9, Math.PI * 2.1); g.fill();
+  // arm across, looking at her watch? No: hands at her sides, head turned to the dryer
+  g.fillStyle = '#6b3f4a'; g.fillRect(cx + 1.6 * u, fy - 22 * u, 1.1 * u, 9 * u);
+  // laundry bag at her feet
+  g.fillStyle = '#4b6a5a'; g.beginPath(); g.ellipse(cx - 4.5 * u, fy - 2.2 * u, 2.6 * u, 2.4 * u, 0, 0, 6.28); g.fill();
+}
+
+function drawBoy() {
+  if (boy.state === 'out') return;
+  const fy = floorY();
+  const door = P(-4), spot = P(96);
+  let x, wet = 1;
+  if (boy.state === 'in') x = door + (spot - door) * Math.min(1, boy.t / 4000);
+  else if (boy.state === 'stand') { x = spot; wet = Math.max(0, 1 - boy.t / 12000); }
+  else { x = spot + (door - spot) * Math.min(1, boy.t / 4000); wet = 0; }
+  // hood up, small
+  g.fillStyle = `rgb(${50 + 30 * (1 - wet)},${70 + 20 * (1 - wet)},${60})`;
+  g.fillRect(x - 1.6 * u, fy - 15 * u, 3.2 * u, 8 * u);
+  rect(x - 1.3 * u, fy - 7 * u, 1 * u, 7 * u, '#2b2c33'); rect(x + 0.3 * u, fy - 7 * u, 1 * u, 7 * u, '#2b2c33');
+  g.fillStyle = '#c2967a'; g.beginPath(); g.arc(x, fy - 16.6 * u, 1.6 * u, 0, 6.28); g.fill();
+  g.fillStyle = `rgb(${50 + 30 * (1 - wet)},${70 + 20 * (1 - wet)},${60})`;
+  g.beginPath(); g.arc(x, fy - 17 * u, 1.9 * u, Math.PI, 0); g.fill();
+  // drips while still wet
+  if (wet > 0.2) {
+    g.fillStyle = 'rgba(150,180,200,0.8)';
+    const d = (elapsed / 700) % 1;
+    g.fillRect(x - 1.5 * u, fy - 9 * u + d * 8 * u, 0.25 * u, 0.6 * u);
+    g.fillRect(x + 1.2 * u, fy - 11 * u + ((d + 0.5) % 1) * 10 * u, 0.25 * u, 0.6 * u);
+  }
+  // hands held out to the warm, while standing
+  if (boy.state === 'stand') rect(x - 3.6 * u, fy - 12.5 * u, 2.2 * u, 0.9 * u, '#c2967a');
+}
+
+function draw() {
+  washerGeom = [];
+  drawRoom();
+  drawWindow();
+  drawBoard();
+  drawFan();
+  const fy = floorY(), s = 13 * u;
+  washers.forEach((w, i) => drawWasher(w, P(30 + i * 14.5), fy - s * 1.15, s));
+  drawWoman();
+  drawDryers();
+  drawMan();
+  drawBoy();
+  // a faint reflection of the machines in the wet floor tiles
+  const rh = Math.min(30 * u, H - fy);
+  if (rh > 0 && c.width) {
+    g.save(); g.globalAlpha = 0.16;
+    g.translate(0, fy * 2); g.scale(1, -1);
+    g.drawImage(c, 0, (fy - rh) * dpr, W * dpr, rh * dpr, 0, fy - rh, W, rh);
+    g.restore();
+  }
+  // dark margins outside the scene on wide screens
+  if (X0 > 0) { g.fillStyle = 'rgba(30,30,28,0.25)'; g.fillRect(0, 0, X0, H); g.fillRect(X0 + S, 0, X0, H); }
+}
+
+function frame(t) {
+  const dt = prev === null ? 16 : Math.min(100, t - prev); prev = t;
+  update(dt); draw();
+  requestAnimationFrame(frame);
+}
+if (/spin/.test(location.hash)) { washers[0].t = RUN * 0.85; }
+if (/done/.test(location.hash)) { washers[0].state = 'done'; washers[0].t = 500; }
+if (/boy/.test(location.hash)) { boy.state = 'stand'; boy.t = 2000; boyVisits = 1; }
+if (/tab/.test(location.hash)) setTimeout(() => { tearTab(0); tearTab(0); tearTab(2); }, 1200);
+requestAnimationFrame(frame);
+
+window.__laund = {
+  tap: () => { const idle = washers.find(w => w.state === 'idle'); return idle ? start(idle) : false; },
+  states: () => washers.map(w => w.state).join(','),
+  loads: () => loads, tear: k => tearTab(k), taken: () => taken, torn: () => torn.join(','), falling: () => falling.length, boyVisits: () => boyVisits, dryer: () => dryerMin, fold: () => fold,
+};
+</script>
+</body>
+</html>

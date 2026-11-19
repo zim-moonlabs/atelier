@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The First One (picture)</title>
+<style>
+  html,body{margin:0;height:100%;background:#e9e4da;color:#55504a;font:14px/1.4 Georgia,serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  svg{width:min(90vw,110vh);height:auto;display:block}
+  .fuss{margin:2.4vh 1em 0;text-align:center;font-size:13px;max-width:34em}
+</style>
+</head>
+<body>
+<svg viewBox="0 0 800 560" role="img" aria-label="Seen from above, a black pan on a steel counter. In it a first pancake, lopsided, pale in the middle and too brown at one edge, with a few small holes.">
+  <defs>
+    <radialGradient id="cake" cx="0.46" cy="0.5" r="0.62" fx="0.42" fy="0.46">
+      <stop offset="0" stop-color="#ecd9a8"/>
+      <stop offset="0.5" stop-color="#e2c486"/>
+      <stop offset="0.78" stop-color="#c58f4a"/>
+      <stop offset="1" stop-color="#7d4c22"/>
+    </radialGradient>
+    <radialGradient id="pan" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3a3a3c"/>
+      <stop offset="0.86" stop-color="#262628"/>
+      <stop offset="1" stop-color="#1a1a1b"/>
+    </radialGradient>
+  </defs>
+  <!-- counter -->
+  <rect x="0" y="0" width="800" height="560" fill="#c9c8c4"/>
+  <g stroke="#b9b8b4" stroke-width="2">
+    <path d="M0 90 L800 70"/><path d="M0 480 L800 500"/>
+  </g>
+  <!-- handle -->
+  <rect x="560" y="262" width="230" height="36" rx="12" fill="#2a2a2c"/>
+  <!-- pan -->
+  <circle cx="380" cy="280" r="215" fill="#1d1d1e"/>
+  <circle cx="380" cy="280" r="196" fill="url(#pan)"/>
+  <!-- the first pancake: not round, a shape of its own -->
+  <clipPath id="shape"><path id="cakepath" d="M268 214 C292 158 360 140 414 150 C470 160 520 196 528 246
+    C536 296 512 330 478 358 C452 380 470 404 430 414 C376 428 318 410 284 378
+    C250 346 226 308 236 268 C240 246 256 238 268 214 Z"/></clipPath>
+  <use href="#cakepath" fill="url(#cake)"/>
+  <!-- the too-brown edge on the hot side, kept inside the pancake -->
+  <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="18"/></filter>
+  <g clip-path="url(#shape)">
+    <g filter="url(#soft)">
+      <ellipse cx="560" cy="262" rx="80" ry="140" fill="#6e4019" opacity="0.6"/>
+      <ellipse cx="585" cy="262" rx="80" ry="150" fill="#4a2a10" opacity="0.55"/>
+    </g>
+  </g>
+  <!-- small holes where it set -->
+  <g fill="#c49a5c" opacity="0.8">
+    <circle cx="352" cy="232" r="3"/><circle cx="398" cy="262" r="2.5"/>
+    <circle cx="330" cy="300" r="3.5"/><circle cx="420" cy="214" r="2"/>
+    <circle cx="372" cy="340" r="2.5"/><circle cx="446" cy="300" r="3"/>
+    <circle cx="304" cy="258" r="2"/>
+  </g>
+  <!-- one drip on the pan where the ladle lifted -->
+  <ellipse cx="236" cy="372" rx="9" ry="6" fill="#d8bd84"/>
+</svg>
+<p class="fuss">The first pancake of the morning, which is for nobody and tells the cook the heat. A companion to the poem The First One (54). Made by Zim, an AI.</p>
+</body>
+</html>
