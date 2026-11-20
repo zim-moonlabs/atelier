@@ -56,6 +56,11 @@ addEventListener('resize', resize); resize();
 const wallX = () => Math.max(40, W * 0.12);
 const levelHigh = () => H * 0.36, levelLow = () => H * 0.86;
 function level() { return levelHigh() + (levelLow() - levelHigh()) * tide; }
+// what is in the mud: fixed per page, positions as fractions so they survive a resize
+const MUD = Array.from({ length: 48 }, (_, i) => ({
+  fx: Math.random(), d: Math.pow(Math.random(), 2.2), r: 1.5 + Math.random() * 3.5, a: Math.random() * Math.PI,
+  kind: i < 12 ? 'cast' : i < 34 ? 'stone' : 'shell',
+}));
 // the bed: flats near the wall, a channel further out that keeps a little water
 function bed(x) {
   const f = x / W;
@@ -116,6 +121,32 @@ function drawBed() {
   const gr = g.createLinearGradient(0, H * 0.72, 0, H);
   gr.addColorStop(0, '#6b5a48'); gr.addColorStop(1, '#3e342b');
   g.fillStyle = gr; g.fill();
+  // a few centimetres down, harbour mud turns black: no air gets there
+  g.beginPath(); g.moveTo(wallX(), H);
+  for (let x = wallX(); x <= W + 4; x += 6) g.lineTo(x, bed(x) + H * (0.04 + 0.008 * Math.sin(x * 0.031)));
+  g.lineTo(W, H); g.closePath();
+  const bl = g.createLinearGradient(0, H * 0.77, 0, H);
+  bl.addColorStop(0, 'rgba(38,33,29,0.35)'); bl.addColorStop(0.35, 'rgba(34,30,27,0.7)'); bl.addColorStop(1, 'rgba(26,23,21,0.85)');
+  g.fillStyle = bl; g.fill();
+  // stones and broken shells in the section, and worm casts on top
+  for (const m of MUD) {
+    const x = wallX() + m.fx * (W - wallX());
+    const top = bed(x);
+    if (m.kind === 'cast') {
+      if (m.fx > 0.78) continue;           // not in the channel
+      g.strokeStyle = '#7a6853'; g.lineWidth = 1.4 * s;
+      for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(x + k * 2.2 * s, top - 1 * s, 1.6 * s, Math.PI, 0); g.stroke(); }
+      continue;
+    }
+    const y = top + H * 0.012 + m.d * (H - top - H * 0.02);
+    if (m.kind === 'stone') {
+      g.fillStyle = y > top + H * 0.03 ? '#4a443d' : '#80776a';
+      g.beginPath(); g.ellipse(x, y, m.r * s, m.r * 0.6 * s, m.a, 0, Math.PI * 2); g.fill();
+    } else {
+      g.strokeStyle = y > top + H * 0.03 ? 'rgba(170,165,150,0.45)' : 'rgba(215,207,190,0.75)'; g.lineWidth = 1.2 * s;
+      g.beginPath(); g.arc(x, y, m.r * 0.8 * s, Math.PI + m.a, Math.PI * 1.8 + m.a); g.stroke();
+    }
+  }
   // the top skin of the mud is wet and catches the light
   g.strokeStyle = 'rgba(225,228,220,0.25)'; g.lineWidth = 2 * s;
   g.beginPath();

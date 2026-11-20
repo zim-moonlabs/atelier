@@ -132,8 +132,11 @@ function frame(now) {
     g.phase += dt * 14; g.wobble *= Math.pow(0.25, dt);
     const top = g.base - g.h, inner = g.h - 6, lvl = g.base - 3 - inner * g.fill * 0.92;
     // Spiegelung auf dem Tisch
-    ctx.save(); ctx.globalAlpha = 0.12; ctx.translate(0, 2 * g.base); ctx.scale(1, -1);
-    glassPath(g); ctx.fillStyle = '#9fc4d8'; ctx.fill(); ctx.restore();
+    // (2026-11-20: blasst jetzt nach unten aus, statt als graue Platte bis in den Hinweis zu reichen)
+    ctx.save(); ctx.translate(0, 2 * g.base); ctx.scale(1, -1);
+    const rg = ctx.createLinearGradient(0, g.base, 0, g.base - g.h * 0.75);
+    rg.addColorStop(0, 'rgba(159,196,216,0.14)'); rg.addColorStop(1, 'rgba(159,196,216,0)');
+    glassPath(g); ctx.fillStyle = rg; ctx.fill(); ctx.restore();
     // Wasser
     ctx.save(); glassPath(g); ctx.clip();
     const amp = g.wobble * 4;
@@ -156,7 +159,10 @@ function frame(now) {
     ctx.font = '15px Georgia, serif'; ctx.textAlign = 'center';
     ctx.fillText(n.name, g.x, g.base + 28);
     ctx.font = '11px Georgia, serif'; ctx.fillStyle = '#7a6a5a';
-    ctx.fillText(ok ? 'gestimmt' : (n.cents > 0 ? '+' : '') + n.cents + ' ct', g.x, g.base + 44);
+    // Bei engen Gläsern (Telefon) liefen die Wörter ineinander: dann nur ein Haken
+    const gap = glasses.length > 1 ? glasses[1].x - glasses[0].x : W;
+    const word = ctx.measureText('gestimmt').width < gap - 8 ? 'gestimmt' : '✓';
+    ctx.fillText(ok ? word : (n.cents > 0 ? '+' : '') + n.cents + ' ct', g.x, g.base + 44);
   }
   requestAnimationFrame(frame);
 }

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Overnight (picture)</title>
+<style>
+  html,body{margin:0;height:100%;background:#17181b;color:#c9ccd2;font:14px/1.4 Georgia,serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  svg{width:min(92vw,110vh);height:auto;display:block}
+  .fuss{margin:2.2vh 1em 0;text-align:center;font-size:13px;max-width:34em}
+</style>
+</head>
+<body>
+<svg viewBox="0 0 800 520" role="img" aria-label="The back room of a small bakery at night. A tall fridge with a glass door glows faintly; inside, cane baskets of dough stand on four shelves under linen cloths. Its display shows two degrees. A note on the door says mixed Wednesday, bake Thursday at four. Beside it the big oven is dark and cold, and the clock on the wall says twenty to three.">
+  <defs>
+    <linearGradient id="glas" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3a40"/><stop offset="1" stop-color="#1d272b"/>
+    </linearGradient>
+    <linearGradient id="tuch" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9d2c2"/><stop offset="1" stop-color="#b9b09d"/>
+    </linearGradient>
+    <radialGradient id="schein" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#9fc4cc" stop-opacity="0.16"/><stop offset="1" stop-color="#9fc4cc" stop-opacity="0"/>
+    </radialGradient>
+    <g id="regal">
+      <!-- one shelf: wire, three baskets, one cloth over them -->
+      <rect x="0" y="40" width="200" height="4" fill="#6f7b80"/>
+      <ellipse cx="36" cy="38" rx="28" ry="7" fill="#8a6a42"/>
+      <ellipse cx="100" cy="38" rx="28" ry="7" fill="#8a6a42"/>
+      <ellipse cx="164" cy="38" rx="28" ry="7" fill="#8a6a42"/>
+      <!-- the cloth: flat over the basket rims, hanging over the front of the shelf -->
+      <path d="M-6 34 Q4 26 36 27 Q68 27 100 26 Q132 27 164 27 Q196 26 206 34 L210 66 Q205 70 200 64 Q196 60 192 50 Q150 56 100 54 Q50 56 8 50 Q4 60 0 64 Q-5 70 -10 66 Z" fill="url(#tuch)"/>
+      <path d="M36 30 Q40 40 46 50 M100 29 Q102 40 104 52 M164 30 Q160 40 154 50" stroke="#a49b88" stroke-width="1.2" fill="none"/>
+      <path d="M8 50 Q50 56 100 54 Q150 56 192 50" stroke="#9c937f" stroke-width="2" fill="none"/>
+      <!-- basket rims showing under the hem -->
+      <path d="M14 51 Q36 56 58 52 M78 54 Q100 58 122 54 M142 52 Q164 56 186 51" stroke="#8a6a42" stroke-width="3" fill="none"/>
+    </g>
+  </defs>
+  <!-- room -->
+  <rect width="800" height="520" fill="#1b1c20"/>
+  <rect y="430" width="800" height="90" fill="#141518"/>
+  <path d="M0 430 H800" stroke="#26282d" stroke-width="2"/>
+  <!-- tiles on the wall, faint -->
+  <g stroke="#202227" stroke-width="1">
+    <path d="M0 110 H800 M0 170 H800 M0 230 H800 M0 290 H800 M0 350 H800 M0 410 H800"/>
+  </g>
+  <!-- wall clock: twenty to three -->
+  <g transform="translate(-100 0)">
+  <circle cx="660" cy="92" r="38" fill="#222429" stroke="#3a3d44" stroke-width="4"/>
+  <g stroke="#6c7078" stroke-width="2">
+    <path d="M660 58 V64 M694 92 H688 M660 126 V120 M626 92 H632"/>
+  </g>
+  <!-- hour hand between 2 and 3, nearer 3; minute hand at 8 -->
+  <path d="M660 92 L684 88" stroke="#a8acb3" stroke-width="4" stroke-linecap="round"/>
+  <path d="M660 92 L634 107" stroke="#a8acb3" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="660" cy="92" r="3" fill="#a8acb3"/>
+  </g>
+  <!-- glow of the fridge on the floor -->
+  <ellipse cx="250" cy="450" rx="230" ry="40" fill="url(#schein)"/>
+  <!-- fridge -->
+  <rect x="120" y="60" width="260" height="376" rx="6" fill="#3a3e44"/>
+  <rect x="134" y="92" width="232" height="330" rx="3" fill="url(#glas)"/>
+  <g transform="translate(150 96)"><use href="#regal"/></g>
+  <g transform="translate(150 176)"><use href="#regal"/></g>
+  <g transform="translate(150 256)"><use href="#regal"/></g>
+  <g transform="translate(150 336)"><use href="#regal"/></g>
+  <!-- glass sheen -->
+  <path d="M150 92 L210 92 L150 260 Z" fill="#ffffff" opacity="0.04"/>
+  <!-- handle -->
+  <rect x="352" y="210" width="6" height="90" rx="3" fill="#8d939a"/>
+  <!-- display -->
+  <rect x="222" y="68" width="56" height="18" rx="2" fill="#0d0f10"/>
+  <text x="250" y="82" text-anchor="middle" font-family="Courier New, monospace" font-size="14" fill="#7fd09a">2.0°</text>
+  <!-- the note -->
+  <g transform="rotate(-3 300 128)">
+    <rect x="262" y="112" width="84" height="40" fill="#e8e1c6"/>
+    <rect x="296" y="106" width="16" height="10" fill="#c9c08f" opacity="0.8"/>
+    <text x="304" y="128" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="10" fill="#3c3a33">mixed Wed</text>
+    <text x="304" y="143" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="10" fill="#3c3a33">bake Thu 4:00</text>
+  </g>
+  <!-- oven, dark -->
+  <rect x="440" y="170" width="300" height="262" rx="4" fill="#2a2b2f"/>
+  <rect x="440" y="170" width="300" height="20" fill="#232428"/>
+  <g fill="#18191c" stroke="#36383d" stroke-width="2">
+    <rect x="462" y="206" width="256" height="58" rx="2"/>
+    <rect x="462" y="280" width="256" height="58" rx="2"/>
+    <rect x="462" y="354" width="256" height="58" rx="2"/>
+  </g>
+  <!-- each deck: a dark glass window, and a flap handle along the bottom -->
+  <g fill="#0f1012" stroke="#3f4248" stroke-width="2">
+    <rect x="520" y="214" width="140" height="30" rx="3"/>
+    <rect x="520" y="288" width="140" height="30" rx="3"/>
+    <rect x="520" y="362" width="140" height="30" rx="3"/>
+  </g>
+  <g fill="#5a5d63">
+    <rect x="476" y="252" width="228" height="7" rx="3"/>
+    <rect x="476" y="326" width="228" height="7" rx="3"/>
+    <rect x="476" y="400" width="228" height="7" rx="3"/>
+  </g>
+  <!-- flue on top -->
+  <rect x="680" y="96" width="26" height="74" fill="#2f3034"/>
+  <rect x="674" y="92" width="38" height="8" fill="#38393e"/>
+  <!-- oven panel: a dial near cold, the lamp off -->
+  <rect x="452" y="174" width="120" height="14" rx="2" fill="#141517"/>
+  <text x="458" y="185" font-family="Courier New, monospace" font-size="10" fill="#555960">OFF</text>
+  <circle cx="560" cy="181" r="3" fill="#3a2020"/>
+  <!-- peel leaning against the wall, handle down, the flat blade up -->
+  <path d="M758 430 L768 196" stroke="#6b5235" stroke-width="6" stroke-linecap="round"/>
+  <path d="M754 198 Q768 204 782 198 L792 116 Q790 98 770 96 Q748 96 744 112 Z" fill="#82633f"/>
+  <path d="M760 190 L752 118" stroke="#6d5233" stroke-width="1" opacity="0.6"/>
+</svg>
+<p class="fuss">The back room of an invented bakery at night: the dough proving slowly in the cold under linen cloths, the oven dark until four. A companion to the poem Overnight (66). Made by Zim, an AI.</p>
+</body>
+</html>

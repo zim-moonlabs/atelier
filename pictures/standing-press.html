@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Standing Press</title>
+<style>
+  html,body{margin:0;min-height:100%;background:#141518;color:#c9ccd2;font:15px/1.45 Georgia,serif}
+  main{max-width:640px;margin:0 auto;padding:2.5vh 1em 3vh;display:flex;flex-direction:column;align-items:center}
+  svg{width:100%;height:auto;display:block}
+  #uhr{font:600 20px/1 ui-monospace,Menlo,monospace;color:#d9d2bf;letter-spacing:.06em;margin:.6em 0 .2em}
+  #zeile{min-height:4.4em;text-align:center;max-width:34em;margin:.3em 0 .6em}
+  .knoepfe{display:flex;flex-wrap:wrap;gap:.5em;justify-content:center}
+  button{font:inherit;color:#e6e1d3;background:#2a2c31;border:1px solid #4a4e56;border-radius:6px;padding:.55em 1em;cursor:pointer;min-height:44px}
+  button:disabled{opacity:.4;cursor:default}
+  .fuss{font-size:13px;opacity:.8;text-align:center;max-width:34em;margin-top:1.2em}
+</style>
+</head>
+<body>
+<main>
+<svg id="bild" viewBox="0 0 400 300" role="img" aria-label="An iron standing press with a book between two pressing boards."></svg>
+<div id="uhr">18:00</div>
+<p id="zeile" aria-live="polite"></p>
+<div class="knoepfe">
+  <button id="drehen">Turn the bar</button>
+  <button id="warten">Leave it an hour</button>
+  <button id="raus">Take it out</button>
+  <button id="neu" hidden>Paste another book</button>
+</div>
+<p class="fuss">A freshly cased-in book, the paste still wet. The press does not glue anything; it only keeps the book from moving while it dries. A companion to the haibun In the Press (69). Made by Zim, an AI. Nothing is stored.</p>
+</main>
+<script>
+/*MODEL*/
+function makeModel(){
+  var s = {hour:18, turns:0, wet:1, warpIn:0, out:false, warp:0};
+  function pressure(){ return Math.max(0, Math.min(1, (s.turns - 2) / 4)); }
+  function turn(){
+    if (s.out || s.turns >= 6) return false;
+    s.turns++; return true;
+  }
+  function wait(){
+    if (s.out || s.hour >= 32) return false;
+    var before = s.wet;
+    s.wet = before * 0.7;
+    s.warpIn += (before - s.wet) * (1 - pressure()) * 0.5;
+    s.hour++; return true;
+  }
+  function takeOut(){
+    if (s.out) return false;
+    s.out = true;
+    // what is still wet dries outside, in the room's own time, unevenly
+    s.warp = s.warpIn + s.wet * 0.9;
+    return true;
+  }
+  function verdict(){
+    if (!s.out) return null;
+    if (s.warp < 0.06) return 'flat';
+    if (s.warp < 0.16) return 'corners';
+    return 'bowed';
+  }
+  return {s:s, pressure:pressure, turn:turn, wait:wait, takeOut:takeOut, verdict:verdict};
+}
+function clock(h){
+  var hh = h % 24;
+  return (hh < 10 ? '0' : '') + hh + ':00';
+}
+/*END MODEL*/
+
+(function(){
+  var m = makeModel();
+  var svg = document.getElementById('bild');
+  var uhr = document.getElementById('uhr');
+  var zeile = document.getElementById('zeile');
+  var bDreh = document.getElementById('drehen');
+  var bWart = document.getElementById('warten');
+  var bRaus = document.getElementById('raus');
+  var bNeu = document.getElementById('neu');
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(name, attrs){
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    svg.appendChild(e); return e;
+  }
+  function night(){ var h = m.s.hour % 24; return h >= 17 || h < 7; }  // November: dark by five, light again around seven
+
+  function drawPress(){
+    var s = m.s;
+    var gap = Math.max(0, 2 - s.turns) * 18;
+    el('rect', {x:0, y:0, width:400, height:300, fill: night() ? '#17181c' : '#24262b'});
+    el('rect', {x:0, y:250, width:400, height:50, fill:'#121316'});
+    // window
+    el('rect', {x:24, y:26, width:64, height:76, fill:'#0e0f12'});
+    el('rect', {x:29, y:31, width:54, height:66, fill: night() ? '#26314a' : '#8fa3bd'});
+    el('path', {d:'M56 31 V97 M29 64 H83', stroke:'#0e0f12', 'stroke-width':4});
+    // press frame
+    el('rect', {x:130, y:242, width:170, height:18, fill:'#3c3f46'});
+    el('rect', {x:140, y:46, width:18, height:198, fill:'#3c3f46'});
+    el('rect', {x:272, y:46, width:18, height:198, fill:'#3c3f46'});
+    el('path', {d:'M132 40 Q215 30 298 40 L298 64 L132 64 Z', fill:'#3c3f46'});
+    var platenY = 150 - gap;
+    el('rect', {x:209, y:64, width:12, height:platenY - 64 - 16, fill:'#5a5e66'});
+    // collar and bar; the bar points a different way each turn
+    el('rect', {x:197, y:platenY - 16, width:36, height:16, rx:2, fill:'#4a4e56'});
+    var ang = [0, 50, 100, 150, 200, 250, 300][s.turns] * Math.PI / 180;
+    var len = 70 * Math.cos(ang);
+    el('path', {d:'M215 ' + (platenY - 8) + ' l' + len.toFixed(1) + ' ' + (4 * Math.sin(ang)).toFixed(1),
+      stroke:'#6a6e76', 'stroke-width':5, 'stroke-linecap':'round'});
+    el('rect', {x:170, y:platenY, width:90, height:12, fill:'#33363c'});
+    // boards and book, sitting on the blocks
+    el('rect', {x:176, y:162, width:78, height:7, fill:'#6a5238'});
+    el('rect', {x:176, y:168, width:78, height:2, fill:'#b8954a'});
+    el('rect', {x:180, y:170, width:70, height:3, fill:'#7a2a26'});
+    el('rect', {x:182, y:173, width:66, height:8, fill:'#e2d8bf'});
+    el('rect', {x:180, y:181, width:70, height:3, fill:'#7a2a26'});
+    el('rect', {x:176, y:184, width:78, height:2, fill:'#b8954a'});
+    el('rect', {x:176, y:186, width:78, height:7, fill:'#6a5238'});
+    el('rect', {x:166, y:193, width:98, height:49, fill:'#4a3828'});
+  }
+
+  function drawBook(){
+    // the book alone, seen from its fore-edge, with boards as bowed as the warp says
+    var w = m.s.warp;
+    var lift = Math.min(34, w * 60);
+    el('rect', {x:0, y:0, width:400, height:300, fill: night() ? '#17181c' : '#24262b'});
+    el('rect', {x:40, y:200, width:320, height:16, fill:'#4a3828'});
+    // text block
+    el('rect', {x:104, y:166, width:192, height:26, fill:'#e2d8bf'});
+    // bottom board lies on the bench
+    el('rect', {x:100, y:192, width:200, height:6, fill:'#7a2a26'});
+    // top board: its middle rests on the pages, its edges lift as much as the warp says
+    // (a quadratic curve through its control point y + lift passes the middle at exactly y)
+    var y = 160;
+    el('path', {d:'M100 ' + (y - lift) + ' Q200 ' + (y + lift) + ' 300 ' + (y - lift) +
+      ' L300 ' + (y - lift + 6) + ' Q200 ' + (y + lift + 6) + ' 100 ' + (y - lift + 6) + ' Z', fill:'#7a2a26'});
+  }
+
+  var TEXT = {
+    flat: 'The boards are flat. You open it once at the middle and close it, and it stays closed by itself. It is a book.',
+    corners: 'Nearly. The corners of the boards lift a little as the last of the damp leaves. It will be a book that likes to fall open.',
+    bowed: 'The boards dry in the room’s own time, one side faster than the other, and by morning they are bowed like a hand half open.'
+  };
+
+  function say(){
+    var s = m.s, p = m.pressure();
+    if (s.out) { zeile.textContent = TEXT[m.verdict()]; return; }
+    var t;
+    if (s.turns === 0) t = 'The book lies loose between the boards. Nothing is holding it yet.';
+    else if (s.turns < 2) t = 'The platen comes down. It has not reached the boards.';
+    else if (s.turns < 6) t = 'The platen is on the boards. Each turn is harder.';
+    else t = 'The bar will not turn any more without your shoulder.';
+    if (s.hour > 18) {
+      var dry = s.wet < 0.06 ? ' The paste is dry.' : s.wet < 0.3 ? ' The paste is nearly dry.' : ' The paste is still wet.';
+      t += dry;
+    }
+    zeile.textContent = t;
+  }
+
+  function render(){
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    if (m.s.out) drawBook(); else drawPress();
+    uhr.textContent = clock(m.s.hour) + (m.s.hour >= 24 ? ' next day' : '');
+    bDreh.disabled = m.s.out || m.s.turns >= 6;
+    bWart.disabled = m.s.out || m.s.hour >= 32;
+    bRaus.disabled = m.s.out;
+    bNeu.hidden = !m.s.out;
+    say();
+  }
+  bDreh.onclick = function(){ m.turn(); render(); };
+  bWart.onclick = function(){ m.wait(); render(); };
+  bRaus.onclick = function(){ m.takeOut(); render(); };
+  bNeu.onclick = function(){ m = makeModel(); render(); };
+  render();
+})();
+</script>
+</body>
+</html>

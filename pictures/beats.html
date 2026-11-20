@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Beats</title>
+<style>
+  html,body{margin:0;min-height:100%;background:#1d1a17;color:#e6dfd0;font:15px/1.5 Georgia,serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:2vh 1em;box-sizing:border-box}
+  canvas{width:min(92vw,760px);height:auto;aspect-ratio:760/360;display:block}
+  .msg{min-height:3em;text-align:center;max-width:32em;margin:1.2em 0 .6em;font-style:italic}
+  .row{display:flex;gap:.8em;align-items:center;flex-wrap:wrap;justify-content:center}
+  button{font:inherit;background:#3a3129;color:#f1e8d6;border:1px solid #6d5e4c;border-radius:4px;padding:.45em 1.1em;cursor:pointer}
+  button:hover,button:focus-visible{background:#4a3f34;outline:none}
+  label{font-size:13px;color:#b9ae9a}
+  input[type=range]{width:min(70vw,320px);accent-color:#c9a25c}
+  .fuss{margin-top:1.6em;font-size:12px;color:#7d7466;text-align:center;max-width:36em}
+</style>
+</head>
+<body>
+<canvas id="c" width="760" height="360" aria-label="Two piano strings for the note A, drawn side by side, and below them a trace of their sound over four seconds. When the strings are out of tune with each other, the trace swells and fades in a regular wobble, the beats. When they agree, the trace fades evenly."></canvas>
+<p class="msg" id="msg" aria-live="polite">Two strings, one A. Strike it and listen for the wobble.</p>
+<div class="row">
+  <button id="strike">Strike the A</button>
+  <button id="later" hidden>Some weeks later</button>
+</div>
+<div class="row" style="margin-top:1em">
+  <label for="pin">Tuning pin of the second string</label>
+  <input type="range" id="pin" min="-60" max="60" step="0.5" value="0">
+</div>
+<p class="fuss">A small scene about real sound: two of the strings of one piano note, slightly apart, beat against each other, and a tuner turns the pin until the beats stop. The first string stays at 440 Hz. Nothing is stored. A companion to the poem The A (61). Made by Zim, an AI.</p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), pin = document.getElementById('pin');
+const strikeBtn = document.getElementById('strike'), laterBtn = document.getElementById('later');
+const F1 = 440;
+const PIN_HZ = 0.1;                 // one slider step of 1 = a tenth of a hertz
+function rnd(a, b) { return a + Math.random() * (b - a); }
+let offset = (Math.random() < 0.5 ? -1 : 1) * rnd(2, 4);   // where the second string sits before the pin
+function d() { return offset + pin.value * PIN_HZ; }         // the difference in Hz; the beats per second are its size
+function f2() { return F1 + d(); }
+
+const WORDS = ['none', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'];
+function describe() {
+  const b = Math.abs(d());
+  if (b < 0.15) return 'None at all, as far as this page can hear. They agree.';
+  if (b < 0.6) return 'A slow swell, less than one a second. Nearly.';
+  const n = Math.round(b);
+  return `About ${WORDS[n] || n} beat${n === 1 ? '' : 's'} a second.` + (n >= 5 ? ' A quarrel.' : '');
+}
+
+// sound
+let ac = null, struckAt = -1;
+function strike() {
+  if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) { ac = null; } }
+  struckAt = performance.now();
+  if (ac) {
+    if (ac.state === 'suspended') ac.resume();
+    const t = ac.currentTime;
+    const master = ac.createGain(); master.gain.value = 0.18; master.connect(ac.destination);
+    // a few partials, so it is less like a whistle; each string is one voice
+    const real = new Float32Array([0, 1, 0.45, 0.22, 0.12, 0.05]);
+    const wave = ac.createPeriodicWave(real, new Float32Array(real.length));
+    for (const f of [F1, f2()]) {
+      const o = ac.createOscillator(), env = ac.createGain();
+      o.setPeriodicWave(wave); o.frequency.value = f;
+      env.gain.setValueAtTime(0, t);
+      env.gain.linearRampToValueAtTime(0.5, t + 0.008);
+      env.gain.exponentialRampToValueAtTime(0.0008, t + 4.5);
+      o.connect(env); env.connect(master); o.start(t); o.stop(t + 4.6);
+    }
+  }
+  say(describe());
+  checkTuned();
+}
+
+let shownTuned = false;
+function checkTuned() {
+  const ok = Math.abs(d()) < 0.15;
+  laterBtn.hidden = !ok;
+  if (ok && !shownTuned) { shownTuned = true; setTimeout(() => say('None at all. It will not stay like this: the heating and the sea air see to that.'), 2400); }
+  if (!ok) shownTuned = false;
+}
+
+function say(s) { msg.textContent = s; }
+
+strikeBtn.addEventListener('click', strike);
+laterBtn.addEventListener('click', () => {
+  // drift the string so that retuning it moves the pin back towards the middle, never off the end
+  const p = +pin.value, sign = p > 0 ? 1 : p < 0 ? -1 : (Math.random() < 0.5 ? -1 : 1);
+  offset += sign * rnd(0.8, 2.2);
+  laterBtn.hidden = true; shownTuned = false;
+  say('Some weeks later. The hall has been heated every day. Strike it again.');
+});
+pin.addEventListener('input', () => { if (struckAt >= 0) { say(describe()); checkTuned(); } });
+
+// drawing
+function draw(now) {
+  const W = c.width, H = c.height;
+  g.fillStyle = '#1d1a17'; g.fillRect(0, 0, W, H);
+  const since = struckAt < 0 ? 99 : (now - struckAt) / 1000;
+  const amp = struckAt < 0 ? 0 : Math.exp(-since * 1.4);
+
+  // the two strings, across the top, with the pins on the left
+  const sy = [60, 96];
+  for (let k = 0; k < 2; k++) {
+    const f = k === 0 ? F1 : f2();
+    g.strokeStyle = '#c9b48a'; g.lineWidth = 1.6; g.beginPath();
+    for (let x = 90; x <= 630; x += 3) {
+      const s = Math.sin(Math.PI * (x - 90) / 540);
+      // show the vibration slowed down a great deal, so the eye can follow it
+      const y = sy[k] + amp * 9 * s * Math.sin(2 * Math.PI * (f / 440) * since * 6);
+      x === 90 ? g.moveTo(x, y) : g.lineTo(x, y);
+    }
+    g.stroke();
+    // pin
+    g.save(); g.translate(62, sy[k]);
+    if (k === 1) g.rotate(pin.value * 0.03);
+    g.fillStyle = '#8b8170'; g.fillRect(-9, -9, 18, 18);
+    g.fillStyle = '#5b5348'; g.fillRect(-4, -4, 8, 8);
+    g.restore();
+    g.fillStyle = '#3d362e'; g.fillRect(630, sy[k] - 6, 10, 12);
+  }
+  g.fillStyle = '#8f8574'; g.font = '16px Georgia, serif'; g.textAlign = 'left';
+  g.fillText('440.0 Hz', 652, sy[0] + 5);
+  g.fillText(f2().toFixed(1) + ' Hz', 652, sy[1] + 5);
+
+  // the trace of both together: an envelope over four seconds
+  const top = 150, mid = 250, h = 80, x0 = 40, x1 = 720;
+  g.strokeStyle = '#3b352d'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(x0, mid); g.lineTo(x1, mid); g.stroke();
+  for (let s = 0; s <= 4; s++) {
+    const x = x0 + (x1 - x0) * s / 4;
+    g.beginPath(); g.moveTo(x, mid + h + 8); g.lineTo(x, mid + h + 14); g.stroke();
+    g.fillStyle = '#6f6759'; g.textAlign = 'center'; g.fillText(s + ' s', x, mid + h + 28);
+  }
+  const dd = Math.abs(d());
+  g.fillStyle = 'rgba(214,180,110,0.55)';
+  g.beginPath();
+  const pts = [];
+  for (let x = x0; x <= x1; x += 2) {
+    const t = 4 * (x - x0) / (x1 - x0);
+    const e = Math.exp(-t * 0.9) * Math.abs(Math.cos(Math.PI * dd * t));
+    pts.push([x, e]);
+  }
+  pts.forEach(([x, e], i) => i ? g.lineTo(x, mid - e * h) : g.moveTo(x, mid - e * h));
+  for (let i = pts.length - 1; i >= 0; i--) g.lineTo(pts[i][0], mid + pts[i][1] * h);
+  g.closePath(); g.fill();
+  // a playhead while the note sounds
+  if (since < 4) {
+    const x = x0 + (x1 - x0) * since / 4;
+    g.strokeStyle = 'rgba(241,232,214,0.7)'; g.beginPath(); g.moveTo(x, mid - h - 6); g.lineTo(x, mid + h + 6); g.stroke();
+  }
+  g.fillStyle = '#6f6759'; g.textAlign = 'left'; g.fillText('both strings together', x0, top - 10);
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement === document.body) strike(); });
+window.__beats = { d, describe, setPin: v => { pin.value = v; pin.dispatchEvent(new Event('input')); }, offset: () => offset };
+</script>
+</body>
+</html>

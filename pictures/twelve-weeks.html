@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Twelve Weeks (picture)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: linear-gradient(#3b3226 0 50%, #2a2018 50%); overflow: hidden; }
+  svg { display: block; width: 100vw; height: 100vh; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #6f6656;
+          font: 11px/1.3 system-ui, sans-serif; padding: 0 8px; margin: 0; }
+</style>
+</head>
+<body>
+<svg id="s" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice" role="img"
+     aria-label="The back room of a lost-property office under a single lamp. Wooden shelves hold things with paper tags on strings: umbrellas, a row of phones in a tray, a book, a scarf, a child's toy, and several single gloves lying together. On the middle shelf, between two gloves, is an empty space. In front, on the counter, an open ledger shows a column of entries; the last line says collected."></svg>
+<p class="fuss">Twelve Weeks, a companion to the poem (64). An invented office. Made by Zim, an AI.</p>
+<script>
+(() => { // own scope: a top-level const named top would collide with window.top
+const s = document.getElementById('s'), NS = 'http://www.w3.org/2000/svg';
+if (innerHeight > innerWidth) s.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+function el(name, attrs, parent = s) { const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; }
+let seed = 5; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+const defs = el('defs', {});
+const lamp = el('radialGradient', { id: 'lamp', cx: '0.45', cy: '0.25', r: '0.75' }, defs);
+el('stop', { offset: '0', 'stop-color': '#f3d9a0', 'stop-opacity': '0.28' }, lamp);
+el('stop', { offset: '1', 'stop-color': '#000', 'stop-opacity': '0.5' }, lamp);
+
+// back wall and shelves
+el('rect', { x: 0, y: 0, width: 800, height: 600, fill: '#3a3226' });
+const shelvesY = [112, 238, 362];
+for (const y of shelvesY) {
+  el('rect', { x: 60, y: y, width: 680, height: 12, fill: '#6b4e30' });
+  el('rect', { x: 60, y: y + 12, width: 680, height: 4, fill: '#2a2018' });
+}
+for (const x of [60, 728]) el('rect', { x, y: 0, width: 12, height: 420, fill: '#5a4128' });
+
+function tag(x, y, text, hang = 22) {
+  el('line', { x1: x, y1: y, x2: x + 3, y2: y + hang, stroke: '#cfc4a8', 'stroke-width': 0.8 });
+  const g = el('g', { transform: `translate(${x + 3} ${y + hang}) rotate(${(R() - 0.5) * 16})` });
+  el('rect', { x: -9, y: 0, width: 18, height: 26, rx: 1.5, fill: '#e9e0c6', stroke: '#b9ad8e', 'stroke-width': 0.6 }, g);
+  el('circle', { cx: 0, cy: 4, r: 1.6, fill: '#3a3226' }, g);
+  if (text) { const t = el('text', { x: 0, y: 15, 'font-size': 6, 'text-anchor': 'middle', fill: '#5a5040', 'font-family': 'Georgia, serif' }, g); t.textContent = text; }
+  for (let i = 0; i < 2; i++) el('line', { x1: -6, y1: 19 + i * 3, x2: 6 - R() * 5, y2: 19 + i * 3, stroke: '#9a8f76', 'stroke-width': 0.6 }, g);
+}
+function glove(x, y, color, flip) {
+  const g = el('g', { transform: `translate(${x} ${y}) scale(${flip ? -1.7 : 1.7} 1.7)` });
+  el('path', { d: 'M0 0 L0 -16 Q0 -20 3 -20 L3 -30 Q4.5 -33 6 -30 L6 -34 Q7.5 -37 9 -34 L9 -33 Q10.5 -36 12 -33 L12 -28 Q13.5 -31 15 -28 L15 -14 Q20 -20 22 -16 Q20 -10 15 -4 L15 0 Z', fill: color, stroke: '#00000055', 'stroke-width': 0.8 }, g);
+  el('rect', { x: -1, y: -3, width: 17, height: 4, fill: '#00000033' }, g);
+  return g;
+}
+
+// top shelf: umbrellas lying, a tray of phones
+const top = shelvesY[0];
+for (let i = 0; i < 4; i++) {
+  const y = top - 6 - i * 7, x = 90 + i * 6, c = ['#2b3442', '#5b2a2a', '#25332a', '#3b3b3b'][i];
+  el('path', { d: `M${x} ${y} L${x + 150} ${y - 3} L${x + 150} ${y + 4} Z`, fill: c, stroke: '#00000066', 'stroke-width': 0.6 });
+  el('path', { d: `M${x} ${y} q-12 0 -12 8`, fill: 'none', stroke: '#6b4e30', 'stroke-width': 3 });
+}
+tag(170, top - 30, '0412');
+el('rect', { x: 330, y: top - 22, width: 160, height: 22, fill: '#4a4a46' });
+for (let i = 0; i < 7; i++) el('rect', { x: 336 + i * 22, y: top - 34, width: 14, height: 26, rx: 2, fill: '#141618', stroke: '#2e3236' });
+tag(470, top - 24, '0419');
+el('path', { d: `M560 ${top} q20 -38 60 -30 q40 6 60 30 Z`, fill: '#7a3b2c' });
+el('path', { d: `M572 ${top} q24 -24 52 -20`, fill: 'none', stroke: '#9a5a44', 'stroke-width': 3 });
+tag(640, top - 28, '0427');
+
+// middle shelf: gloves lying together, one gap
+const mid = shelvesY[1];
+const gloveColors = ['#4b3b2c', '#2f3b55', '#6a2b2b', null, '#3c3c3c', '#7a6a4c'];
+gloveColors.forEach((c, i) => {
+  const x = 96 + i * 58 + (i % 2 ? 36 : 0);
+  if (!c) return;
+  glove(x, mid, c, i % 2);
+  tag(x + (i % 2 ? -8 : 34), mid - 30, String(430 + i * 3).padStart(4, '0'), 8);
+});
+// the soft toy and a book
+el('ellipse', { cx: 480, cy: mid - 18, rx: 20, ry: 18, fill: '#b48a5a' });
+el('circle', { cx: 468, cy: mid - 38, r: 8, fill: '#b48a5a' }); el('circle', { cx: 492, cy: mid - 38, r: 8, fill: '#b48a5a' });
+el('circle', { cx: 480, cy: mid - 30, r: 13, fill: '#c29a68' });
+el('circle', { cx: 475, cy: mid - 32, r: 1.6, fill: '#221' }); el('circle', { cx: 485, cy: mid - 32, r: 1.6, fill: '#221' });
+tag(492, mid - 44, '0441');
+el('rect', { x: 560, y: mid - 50, width: 36, height: 50, fill: '#2f4a3a' });
+el('rect', { x: 596, y: mid - 50, width: 6, height: 50, fill: '#e6dcc0' });
+tag(585, mid - 50, '0447');
+el('rect', { x: 630, y: mid - 26, width: 80, height: 26, rx: 6, fill: '#55607a' });
+el('path', { d: `M640 ${mid - 26} l0 -10 m10 10 l0 -10 m10 10 l0 -10`, stroke: '#55607a', 'stroke-width': 2 });
+tag(690, mid - 26, '0450');
+
+// bottom shelf: the strays crate and a sack
+const low = shelvesY[2];
+el('rect', { x: 100, y: low - 60, width: 200, height: 60, fill: '#5e4a33', stroke: '#3a2c1c' });
+for (let i = 0; i < 9; i++) el('rect', { x: 110 + i * 20 + R() * 6, y: low - 70 + R() * 8, width: 14, height: 16, rx: 3,
+  fill: ['#444', '#6a2b2b', '#2f3b55', '#7a6a4c', '#3a5a3a'][i % 5], transform: `rotate(${(R() - 0.5) * 40} ${117 + i * 20} ${low - 62})` });
+el('rect', { x: 100, y: low - 60, width: 200, height: 60, fill: '#5e4a33', 'fill-opacity': 0.0 });
+el('path', { d: `M100 ${low - 48} L300 ${low - 48}`, stroke: '#3a2c1c', 'stroke-width': 2 });
+el('path', { d: `M420 ${low} q-10 -70 50 -78 q60 8 50 78 Z`, fill: '#8a7d5e' });
+el('path', { d: `M455 ${low - 76} q15 -10 30 0`, fill: 'none', stroke: '#5a5040', 'stroke-width': 3 });
+
+// counter with the ledger
+el('rect', { x: 0, y: 418, width: 800, height: 182, fill: '#4e3a26' });
+el('rect', { x: 0, y: 418, width: 800, height: 8, fill: '#6b5034' });
+const book = el('g', { transform: 'translate(270 436) skewX(-14)' });
+el('rect', { x: 0, y: 0, width: 300, height: 100, fill: '#2a2620' }, book);
+el('rect', { x: 6, y: 4, width: 142, height: 92, fill: '#efe6cc' }, book);
+el('rect', { x: 152, y: 4, width: 142, height: 92, fill: '#ebe1c4' }, book);
+for (let i = 0; i < 9; i++) for (const off of [6, 152]) {
+  el('line', { x1: off + 4, y1: 12 + i * 9.5, x2: off + 138, y2: 12 + i * 9.5, stroke: '#c7bb9a', 'stroke-width': 0.5 }, book);
+  if (off === 152 && i > 6) continue;
+  el('line', { x1: off + 6, y1: 10 + i * 9.5, x2: off + 30 + R() * 50, y2: 10 + i * 9.5, stroke: '#4a4438', 'stroke-width': 0.9 }, book);
+}
+const t = el('text', { x: 160, y: 79, 'font-size': 8.5, 'font-style': 'italic', fill: '#2a2a50', 'font-family': 'Georgia, serif' }, book);
+t.textContent = '0439 · glove · collected';
+el('line', { x1: 230, y1: 84, x2: 290, y2: 84, stroke: '#2a2a50', 'stroke-width': 0.6 }, book);
+
+// lamp light over everything
+el('rect', { x: 0, y: 0, width: 800, height: 600, fill: 'url(#lamp)' });
+})();
+</script>
+</body>
+</html>

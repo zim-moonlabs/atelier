@@ -81,17 +81,50 @@ function step(dt) {
   }
 }
 
+// fixed pseudo-random numbers, so the streaks keep their places
+function hash(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+
 function draw(time) {
-  // sky, far bank
+  // sky, and the far bank, soft in the mist
   g.fillStyle = '#b9c0c0'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#a9b1b0';
+  g.beginPath(); g.moveTo(0, H * 0.3);
+  for (let x = 0; x <= W + 8; x += 8) g.lineTo(x, H * 0.3 - (Math.sin(x * 0.011) * 0.5 + Math.sin(x * 0.037 + 1) * 0.3 + 0.9) * H * 0.035);
+  g.lineTo(W, H * 0.3); g.closePath(); g.fill();
   g.fillStyle = '#9da6a5'; g.fillRect(0, H * 0.3, W, H * 0.06);
-  // upper water, smooth
-  g.fillStyle = '#8e9997'; g.fillRect(0, H * 0.36, W, H * 0.14);
-  // weir face
-  g.fillStyle = '#76817f'; g.fillRect(0, H * 0.5, W, H * 0.12);
-  g.fillStyle = '#6a7472'; g.fillRect(0, H * 0.495, W, H * 0.01);
-  // lower water
-  g.fillStyle = '#7f8b89'; g.fillRect(0, H * 0.62, W, H * 0.38);
+  // upper water, smooth, with long slow highlights sliding towards the lip
+  const up = g.createLinearGradient(0, H * 0.36, 0, H * 0.5);
+  up.addColorStop(0, '#97a1a0'); up.addColorStop(1, '#87928f');
+  g.fillStyle = up; g.fillRect(0, H * 0.36, W, H * 0.14);
+  g.strokeStyle = 'rgba(214,220,216,0.35)'; g.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const y = H * (0.375 + i * 0.022), off = ((time / 1000) * 9 + i * 53) % 160;
+    for (let x = -160 + off; x < W; x += 160) { g.beginPath(); g.moveTo(x, y); g.lineTo(x + 40 + i * 6, y); g.stroke(); }
+  }
+  // the lip: a stone sill the water bends over
+  g.fillStyle = '#5f6967'; g.fillRect(0, H * 0.493, W, H * 0.012);
+  // weir face: a sheet of water going down, glassy at the top, white at the bottom
+  const face = g.createLinearGradient(0, H * 0.505, 0, H * 0.62);
+  face.addColorStop(0, '#7d8886'); face.addColorStop(0.55, '#a4adab'); face.addColorStop(1, '#d6dbd7');
+  g.fillStyle = face; g.fillRect(0, H * 0.505, W, H * 0.115);
+  const fall = H * 0.115, run = ((time / 1000) * fall * 0.9) % fall;
+  for (let i = 0; i < W / 7; i++) {
+    const x = hash(i) * W, len = fall * (0.15 + hash(i + 500) * 0.3), y0 = H * 0.505 + (run + hash(i + 900) * fall) % fall;
+    g.strokeStyle = `rgba(236,240,236,${0.18 + 0.35 * (y0 - H * 0.505) / fall})`;
+    g.beginPath(); g.moveTo(x, y0); g.lineTo(x, Math.min(H * 0.62, y0 + len)); g.stroke();
+  }
+  // lower water, broken up, the ripples carried away from the weir
+  const lowG = g.createLinearGradient(0, H * 0.62, 0, H);
+  lowG.addColorStop(0, '#7a8684'); lowG.addColorStop(1, '#86918f');
+  g.fillStyle = lowG; g.fillRect(0, H * 0.62, W, H * 0.38);
+  g.strokeStyle = 'rgba(220,226,222,0.28)';
+  for (let i = 0; i < 14; i++) {
+    const y = H * 0.64 + ((time / 1000) * H * 0.012 + i * H * 0.026) % (H * 0.36), off = (i * 71) % 120;
+    const a = 1 - (y - H * 0.64) / (H * 0.36);
+    g.globalAlpha = a;
+    for (let x = -120 + off; x < W; x += 120) { g.beginPath(); g.moveTo(x, y); g.lineTo(x + 22 + (i % 4) * 7, y); g.stroke(); }
+  }
+  g.globalAlpha = 1;
   // white water
   for (const d of drops) {
     g.fillStyle = `rgba(240,242,238,${Math.min(0.75, d.life * 0.6)})`;
@@ -137,18 +170,25 @@ function drawHeron(x, y, k, time) {
     const sx = shX + (hx - shX) * (1 - swallow), sy = shY + (hy - shY) * (1 - swallow);
     g.fillStyle = pale; g.beginPath(); g.arc(sx, sy, k * 1.6, 0, Math.PI * 2); g.fill();
   }
-  // head, black stripe, beak pointing forward or down
-  g.fillStyle = pale; g.beginPath(); g.arc(hx, hy, k * 1.7, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = dark; g.lineWidth = k * 0.6;
-  g.beginPath(); g.moveTo(hx, hy - k * 0.8); g.lineTo(hx + k * 3, hy - k * 1.2); g.stroke();
+  // head, black stripe running back into a thin plume, eye, a dagger of a beak pointing forward or down
+  g.fillStyle = pale; g.beginPath(); g.ellipse(hx, hy, k * 1.9, k * 1.5, 0, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = dark; g.lineWidth = k * 0.6; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(hx - k * 0.6, hy - k * 0.7); g.lineTo(hx + k * 1.8, hy - k * 1.1); g.stroke();
+  g.lineWidth = k * 0.35;
+  g.beginPath(); g.moveTo(hx + k * 1.6, hy - k * 1.1);
+  g.quadraticCurveTo(hx + k * 3.5, hy - k * 1.3, hx + k * 5 + Math.sin(time * 0.0013) * k * 0.4, hy - k * 0.2); g.stroke();
+  g.fillStyle = '#e0b84a'; g.beginPath(); g.arc(hx - k * 0.5, hy - k * 0.25, k * 0.38, 0, Math.PI * 2); g.fill();
+  g.fillStyle = dark; g.beginPath(); g.arc(hx - k * 0.55, hy - k * 0.25, k * 0.18, 0, Math.PI * 2); g.fill();
   const ba = Math.PI + 0.25 + neck * 0.9;       // beak angle: forward, then down
   const bx = hx + Math.cos(ba) * k * 6, by = hy + Math.sin(ba) * k * 6 * -1;
-  g.strokeStyle = '#c99a3a'; g.lineWidth = k * 0.9;
-  g.beginPath(); g.moveTo(hx - k, hy); g.lineTo(bx, by); g.stroke();
+  const nx = Math.cos(ba + Math.PI / 2) * k * 0.55, ny = -Math.sin(ba + Math.PI / 2) * k * 0.55;
+  const rx = hx + Math.cos(ba) * k * 1.2, ry = hy - Math.sin(ba) * k * 1.2;
+  g.fillStyle = '#c99a3a';
+  g.beginPath(); g.moveTo(rx + nx, ry + ny); g.lineTo(bx, by); g.lineTo(rx - nx, ry - ny); g.closePath(); g.fill();
   // the fish, only for half a second
   if (fishY !== null) {
     g.fillStyle = '#d8dcd6';
-    g.beginPath(); g.ellipse(bx - k, by, k * 2.4, k * 0.8, 0.3, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(bx, by, k * 2.4, k * 0.8, -ba + Math.PI / 2, 0, Math.PI * 2); g.fill();   // held crosswise in the tip
   }
 }
 

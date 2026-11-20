@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Broken Line</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0d0a; overflow: hidden; color: #e3dfd2;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: pointer;
+           user-select: none; -webkit-user-select: none; }
+  .msg { position: fixed; left: 0; right: 0; top: 14px; text-align: center; color: #f1ede0; min-height: 1.4em;
+         pointer-events: none; font: italic 16px/1.4 Georgia, serif; padding: 0 24px; text-shadow: 0 0 4px #000; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #5d6458;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; padding: 0 8px; }
+  button { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%); display: none;
+           background: #1d211c; color: #e3dfd2; border: 1px solid #4b5246; border-radius: 4px;
+           font: 14px system-ui, sans-serif; padding: 8px 14px; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A closed two-lane road at night, seen from above. A marking truck with an amber beacon moves slowly up the left lane; behind it a worker walks along the centre. Hold down to lay hot white paint on the centre line; faint chalk marks show where each six-metre dash should begin and end. Cones stand along both edges. At five o'clock the cones go, the road opens, and cars drive through; their headlights make the new dashes shine. A car that wants to pass crosses the centre line only where there is a gap long enough."></canvas>
+<p class="msg" id="msg"></p>
+<button id="btn" type="button">Five o'clock: open the road</button>
+<p class="fuss">A closed road at night, invented. Hold to paint. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), countEl = document.getElementById('count'), btn = document.getElementById('btn');
+
+// ---- logic (checked in pruefung/check-broken-line.js) ----
+const LANE = 3.75, DASH = 6, GAP = 12, PERIOD = DASH + GAP, SPEED = 3, CAR_V = 14;
+const CAR_L = 4.5, CAR_W = 1.8, CHANGE_D = 24, NEED = 9; // the car's outline covers c0+7.92 to c0+16.08 of the centre line (pruefung/calc-broken-line-change.js)
+function gapFree(segs, lo, hi) { return segs.every(q => q.b <= lo || q.a >= hi); }
+function findCrossing(segs, from, to, need) {
+  for (let x = from; x + need <= to; x += 0.25) if (gapFree(segs, x, x + need)) return x;
+  return null;
+}
+function stats(segs) {
+  const n = segs.length;
+  if (!n) return { n: 0, dash: 0, gap: 0, gaps: 0 };
+  let sum = 0, gsum = 0;
+  for (let i = 0; i < n; i++) { sum += segs[i].b - segs[i].a; if (i) gsum += segs[i].a - segs[i - 1].b; }
+  return { n, dash: sum / n, gap: n > 1 ? gsum / (n - 1) : 0, gaps: n - 1 };
+}
+function smooth(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
+// lateral position of a lane-changing car: +R (right lane) to -R (left lane) while its centre goes from c0 to c0+D
+function laneX(s, c0) { const R = LANE / 2; return c0 == null ? R : R - 2 * R * smooth((s - c0) / CHANGE_D); }
+
+const L = { segs: [], s: -9, painting: false, start: 0, mode: 'paint', cars: [], nextCar: 0.6,
+            carN: 0, sTop: 0, sBottom: 0, t: 0, crossed: 0, stayed: 0 };
+window.__line = { L, gapFree, findCrossing, stats, laneX, CAR_L, CAR_W, LANE, CHANGE_D, NEED };
+
+let total = 0;
+try { total = +localStorage.getItem('zim-line-dashes') || 0; } catch (_) {}
+function showCount() { countEl.textContent = total ? `Dashes laid here so far: ${total}.` : ''; }
+showCount();
+
+function say(s) { msg.textContent = s; }
+say('Hold down to lay paint. The chalk marks show where a dash begins and ends.');
+
+function down() {
+  if (L.mode !== 'paint' || L.painting) return;
+  L.painting = true; L.start = L.s;
+  const last = L.segs[L.segs.length - 1];
+  if (last) say(`Gap: ${(L.s - last.b).toFixed(1)} m.`);
+}
+function up() {
+  if (!L.painting) return;
+  L.painting = false;
+  const len = L.s - L.start;
+  if (len < 0.1) return;
+  L.segs.push({ a: L.start, b: L.s });
+  total++; try { localStorage.setItem('zim-line-dashes', total); } catch (_) {}
+  showCount();
+  if (len > 30) say(`${len.toFixed(1)} m. Nearly a solid line: nobody may cross that.`);
+  else say(`Dash: ${len.toFixed(1)} m.`);
+  if (L.segs.length >= 5) btn.style.display = 'block';
+}
+function open() {
+  up();
+  L.mode = 'open'; L.cars = []; L.nextCar = 0.8; L.crossed = L.stayed = 0;
+  L.sTop = L.s - 1; L.sBottom = L.sTop - viewLen();
+  const st = stats(L.segs);
+  say(`${st.n} dashes, ${st.dash.toFixed(1)} m on average` + (st.gaps ? `, gaps ${st.gap.toFixed(1)} m.` : '.') + ' The road is open.');
+  btn.textContent = 'Midnight: close it again';
+}
+function close() {
+  L.mode = 'paint'; L.cars = [];
+  L.s += 8;
+  say('Closed again. The truck goes on from where it stopped.');
+  btn.textContent = 'Five o\'clock: open the road';
+}
+btn.addEventListener('click', e => { e.stopPropagation(); L.mode === 'paint' ? open() : close(); });
+c.addEventListener('pointerdown', e => { e.preventDefault(); down(); });
+addEventListener('pointerup', up); addEventListener('pointercancel', up);
+addEventListener('keydown', e => { if (e.key === ' ' && !e.repeat) { e.preventDefault(); down(); } });
+addEventListener('keyup', e => { if (e.key === ' ') up(); });
+
+function spawnCar() {
+  const wants = L.carN++ % 2 === 1;
+  let c0 = null;
+  if (wants) {
+    const x = findCrossing(L.segs, L.sBottom + 6, L.sTop - 6, NEED);
+    if (x != null) c0 = x - 7.5;
+  }
+  L.cars.push({ s: L.sBottom - CAR_L, wants, c0, told: false });
+}
+function step(dt) {
+  L.t += dt;
+  if (L.mode === 'paint') { L.s += SPEED * dt; return; }
+  L.nextCar -= dt;
+  if (L.nextCar <= 0 && L.cars.length < 2) { spawnCar(); L.nextCar = 3 + (L.carN % 3) * 0.7; }
+  for (const car of L.cars) {
+    car.s += CAR_V * dt;
+    if (!car.told && car.wants && car.s > L.sBottom + 2) {
+      car.told = true;
+      if (car.c0 != null) { L.crossed++; say('This one wanted to pass, and crossed over in a gap.'); }
+      else { L.stayed++; say('This one wanted to pass. No gap long enough here, so it stays in its lane.'); }
+    }
+  }
+  L.cars = L.cars.filter(car => car.s < L.sTop + viewLen() * 0.1 + 30);
+}
+
+// ---- drawing ----
+let W, H, dpr, k, X0;
+function viewLen() { return H / k; }
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  k = Math.min(W / 13, H / 34);
+  X0 = W / 2;
+  c.width = W * dpr; c.height = H * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (L.mode === 'open') L.sBottom = L.sTop - viewLen();
+}
+addEventListener('resize', resize); resize();
+
+function Y(s) { return L.mode === 'paint' ? H * 0.3 - (s - L.s) * k : H * 0.03 - (s - L.sTop) * k; }
+function sAt(y) { return L.mode === 'paint' ? L.s + (H * 0.3 - y) / k : L.sTop + (H * 0.03 - y) / k; }
+function hash(n) { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); }
+
+function drawGround(lo, hi) {
+  g.fillStyle = '#0b100b'; g.fillRect(0, 0, W, H);
+  const edge = LANE + 0.6;
+  g.fillStyle = '#18191b'; g.fillRect(X0 - edge * k, 0, 2 * edge * k, H);
+  g.fillStyle = '#1c2a18';
+  for (let m = Math.floor(lo); m < hi; m++) for (let j = 0; j < 5; j++) {
+    const h = hash(m * 7 + j), side = j % 2 ? 1 : -1;
+    const x = X0 + side * (edge + 0.3 + h * 6) * k, y = Y(m + hash(m * 3 + j));
+    g.fillRect(x, y, 1.5, 1.5);
+  }
+  g.fillStyle = '#5e5f5a';
+  for (const side of [-1, 1]) g.fillRect(X0 + side * (LANE + 0.25) * k - 0.125 * k, 0, 0.25 * k, H);
+}
+function drawPaint(lo, hi, color, w) {
+  g.fillStyle = color;
+  const all = L.painting ? L.segs.concat([{ a: L.start, b: L.s }]) : L.segs;
+  for (const q of all) {
+    if (q.b < lo || q.a > hi) continue;
+    g.fillRect(X0 - w * k / 2, Y(q.b), w * k, (q.b - q.a) * k);
+  }
+}
+function drawBeads(lo, hi, inLight) {
+  const all = L.painting ? L.segs.concat([{ a: L.start, b: L.s }]) : L.segs;
+  for (const q of all) {
+    if (q.b < lo || q.a > hi) continue;
+    for (let m = Math.ceil(q.a * 4); m < q.b * 4; m++) {
+      const h = hash(m), tw = hash(m + Math.floor(L.t * 6) * 0.37);
+      if (tw < 0.7) continue;
+      const s = m / 4, x = X0 + (h - 0.5) * 0.18 * k, y = Y(s);
+      if (!inLight(x, y)) continue;
+      g.fillStyle = 'rgba(255,255,240,' + (0.4 + 0.6 * tw) + ')';
+      g.fillRect(x - 1, y - 1, 2, 2);
+    }
+  }
+}
+function drawChalk(lo, hi) {
+  g.fillStyle = 'rgba(215,215,200,0.55)';
+  for (let n = Math.floor(lo / PERIOD); n * PERIOD < hi; n++) for (const s of [n * PERIOD, n * PERIOD + DASH]) {
+    if (s < 0) continue;
+    g.beginPath(); g.arc(X0, Y(s), Math.max(1.5, 0.12 * k), 0, 7); g.fill();
+  }
+}
+function cone(x, y) {
+  const r = 0.28 * k;
+  g.fillStyle = '#d8641e'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  g.fillStyle = '#e8e4d8'; g.beginPath(); g.arc(x, y, r * 0.55, 0, 7); g.fill();
+  g.fillStyle = '#d8641e'; g.beginPath(); g.arc(x, y, r * 0.3, 0, 7); g.fill();
+}
+
+function drawPaintMode() {
+  const lo = sAt(H), hi = sAt(0);
+  drawGround(lo, hi);
+  drawChalk(lo, hi);
+  drawPaint(lo, hi, '#6d6d66', 0.2);
+  for (let n = Math.floor(lo / 15); n * 15 < hi; n++) for (const side of [-1, 1]) cone(X0 + side * (LANE + 0.9) * k, Y(n * 15 + (side > 0 ? 7 : 0)));
+  // work lamp behind the truck
+  const lx = X0 - 0.6 * k, ly = Y(L.s - 3), R = 9 * k;
+  g.save(); g.globalCompositeOperation = 'lighter';
+  const gr = g.createRadialGradient(lx, ly, 0, lx, ly, R);
+  gr.addColorStop(0, 'rgba(120,100,60,0.45)'); gr.addColorStop(1, 'rgba(120,100,60,0)');
+  g.fillStyle = gr; g.fillRect(lx - R, ly - R, 2 * R, 2 * R);
+  g.restore();
+  g.save(); g.beginPath(); g.arc(lx, ly, R * 0.75, 0, 7); g.clip();
+  drawPaint(lo, hi, '#efece0', 0.2);
+  g.restore();
+  drawBeads(lo, hi, (x, y) => Math.hypot(x - lx, y - ly) < R * 0.7);
+  // truck in the left lane, applicator arm to the centre
+  const tx = X0 - LANE / 2 * k;
+  g.strokeStyle = '#8a8a82'; g.lineWidth = Math.max(2, 0.12 * k);
+  g.beginPath(); g.moveTo(tx, Y(L.s + 1)); g.lineTo(X0, Y(L.s + 0.3)); g.stroke();
+  g.fillStyle = '#c9c4b2'; g.fillRect(tx - 1.25 * k, Y(L.s + 8), 2.5 * k, 7 * k);
+  g.fillStyle = '#8f8a7a'; g.fillRect(tx - 1.25 * k, Y(L.s + 8), 2.5 * k, 2 * k);
+  g.fillStyle = '#9a3d1a'; for (let i = 0; i < 4; i++) g.fillRect(tx - 1.25 * k + i * 0.7 * k, Y(L.s + 1.2), 0.35 * k, 0.4 * k);
+  const on = Math.floor(L.t * 2.5) % 2 === 0;
+  g.fillStyle = on ? '#ffb02e' : '#6a4a1a'; g.beginPath(); g.arc(tx, Y(L.s + 6.8), 0.3 * k, 0, 7); g.fill();
+  if (on) { g.save(); g.globalCompositeOperation = 'lighter';
+    const b = g.createRadialGradient(tx, Y(L.s + 6.8), 0, tx, Y(L.s + 6.8), 4 * k);
+    b.addColorStop(0, 'rgba(255,170,40,0.25)'); b.addColorStop(1, 'rgba(255,170,40,0)');
+    g.fillStyle = b; g.fillRect(tx - 4 * k, Y(L.s + 6.8) - 4 * k, 8 * k, 8 * k); g.restore(); }
+  // the painter, walking beside the fresh line
+  const px = X0 + 0.9 * k, py = Y(L.s - 4.5 + Math.sin(L.t * 3) * 0.1);
+  g.fillStyle = '#e06a1c'; g.beginPath(); g.ellipse(px, py, 0.32 * k, 0.22 * k, 0, 0, 7); g.fill();
+  g.fillStyle = '#f2f0dc'; g.fillRect(px - 0.32 * k, py - 0.04 * k, 0.64 * k, 0.08 * k);
+  g.fillStyle = '#3a342c'; g.beginPath(); g.arc(px, py, 0.13 * k, 0, 7); g.fill();
+}
+
+function drawOpenMode() {
+  const lo = sAt(H), hi = sAt(0);
+  drawGround(lo, hi);
+  drawPaint(lo, hi, '#3c3c38', 0.2);
+  const cones = [];
+  for (const car of L.cars) {
+    const x = X0 + laneX(car.s, car.c0) * k, y = Y(car.s + CAR_L / 2);
+    const dx = laneX(car.s + 3, car.c0) - laneX(car.s, car.c0), ang = Math.atan2(dx, 3);
+    cones.push({ x, y, ang });
+  }
+  const inCone = (px, py) => cones.some(q => {
+    const vx = px - q.x, vy = q.y - py, d = Math.hypot(vx, vy);
+    if (d > 28 * k || vy <= 0) return false;
+    return Math.abs(Math.atan2(vx, vy) - q.ang) < 0.22;
+  });
+  for (const q of cones) {
+    g.save(); g.globalCompositeOperation = 'lighter';
+    g.translate(q.x, q.y); g.rotate(q.ang);
+    const gr = g.createLinearGradient(0, 0, 0, -28 * k);
+    gr.addColorStop(0, 'rgba(160,160,140,0.2)'); gr.addColorStop(1, 'rgba(160,160,140,0)');
+    g.fillStyle = gr;
+    g.beginPath(); g.moveTo(-0.7 * k, 0); g.lineTo(-28 * k * Math.tan(0.22), -28 * k); g.lineTo(28 * k * Math.tan(0.22), -28 * k); g.lineTo(0.7 * k, 0); g.fill();
+    g.restore();
+    g.save(); g.translate(q.x, q.y); g.rotate(q.ang);
+    g.beginPath(); g.moveTo(-0.7 * k, 0); g.lineTo(-28 * k * Math.tan(0.22), -28 * k); g.lineTo(28 * k * Math.tan(0.22), -28 * k); g.lineTo(0.7 * k, 0); g.closePath();
+    g.rotate(-q.ang); g.translate(-q.x, -q.y);
+    g.clip(); drawPaint(lo, hi, '#fbf8ea', 0.2); g.restore();
+  }
+  drawBeads(lo, hi, inCone);
+  for (const car of L.cars) {
+    const x = X0 + laneX(car.s, car.c0) * k, yc = Y(car.s);
+    const dx = laneX(car.s + 2, car.c0) - laneX(car.s - 2, car.c0), ang = Math.atan2(dx, 4);
+    g.save(); g.translate(x, yc); g.rotate(ang);
+    g.fillStyle = car.wants ? '#3a4656' : '#4a3c3a';
+    g.fillRect(-CAR_W / 2 * k, -CAR_L / 2 * k, CAR_W * k, CAR_L * k);
+    g.fillStyle = '#1c2026'; g.fillRect(-CAR_W / 2 * k + 2, -CAR_L / 2 * k + 0.9 * k, CAR_W * k - 4, 0.8 * k);
+    g.fillStyle = '#fff6d0'; g.fillRect(-CAR_W / 2 * k, -CAR_L / 2 * k, 0.35 * k, 0.15 * k); g.fillRect(CAR_W / 2 * k - 0.35 * k, -CAR_L / 2 * k, 0.35 * k, 0.15 * k);
+    g.fillStyle = '#b0201a'; g.fillRect(-CAR_W / 2 * k, CAR_L / 2 * k - 0.15 * k, 0.35 * k, 0.15 * k); g.fillRect(CAR_W / 2 * k - 0.35 * k, CAR_L / 2 * k - 0.15 * k, 0.35 * k, 0.15 * k);
+    g.restore();
+  }
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  step(dt);
+  L.mode === 'paint' ? drawPaintMode() : drawOpenMode();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

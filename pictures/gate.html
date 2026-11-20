@@ -183,7 +183,10 @@ function draw() {
   const bw = Math.max(14, u * 4.4), bh = Math.max(8, u * 2.4);
   const bx = latched ? gx + gw - bw * 0.95 : gx + gw + postW + u * 2, by = ground - bh * 0.7;
   g.fillStyle = `rgb(${120 + L * 40},${60 + L * 26},${46 + L * 20})`; g.fillRect(bx, by, bw, bh);
-  g.fillStyle = `rgba(80,120,60,${0.5 + nights * 0.03})`; g.fillRect(bx, by + bh * 0.55, bw * 0.6, bh * 0.45);
+  // the green of the mould, kept visible at night: lower edge and one patch up the side
+  g.fillStyle = `rgba(${70 + L * 40},${105 + L * 50},${55 + L * 25},${Math.min(0.9, 0.7 + nights * 0.02)})`;
+  g.fillRect(bx, by + bh * 0.5, bw * 0.75, bh * 0.5);
+  g.fillRect(bx, by + bh * 0.15, bw * 0.3, bh * 0.4);
   // knocks: rings at the post
   for (const k of knocks) {
     g.strokeStyle = `rgba(230,225,210,${(1 - k.t) * 0.5 * k.s})`; g.lineWidth = 1.5;

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Poke Test</title>
+<style>
+  html,body{margin:0;min-height:100%;background:#1b1a19;color:#e6dfd0;font:15px/1.5 Georgia,serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:2vh 1em;box-sizing:border-box}
+  canvas{width:min(92vw,760px);height:auto;aspect-ratio:760/360;display:block}
+  .msg{min-height:4.5em;text-align:center;max-width:32em;margin:1.2em 0 .6em;font-style:italic}
+  .row{display:flex;gap:.6em;align-items:center;flex-wrap:wrap;justify-content:center;margin-top:.5em}
+  button{font:inherit;background:#3a3129;color:#f1e8d6;border:1px solid #6d5e4c;border-radius:4px;padding:.45em 1em;cursor:pointer}
+  button:hover,button:focus-visible{background:#4a3f34;outline:none}
+  button[disabled]{opacity:.35;cursor:default}
+  .fuss{margin-top:1.6em;font-size:12px;color:#7d7466;text-align:center;max-width:36em}
+</style>
+</head>
+<body>
+<canvas id="c" width="760" height="360" aria-label="Two cane baskets of shaped dough. The left one stands in a fridge at two degrees, the right one on a warm kitchen counter. A clock between them shows the hour. Each hour the dough rises: the warm one fast, the cold one slowly. A finger can press a dent into either, and the dent comes back fast, slowly, or not at all."></canvas>
+<p class="msg" id="msg" aria-live="polite">Ten at night. Two loaves shaped from one dough: one goes into the fridge, one stays on the warm counter. The oven goes on at four.</p>
+<div class="row">
+  <button id="later">An hour later</button>
+</div>
+<div class="row">
+  <button id="pokeCold">Poke the cold one</button>
+  <button id="pokeWarm">Poke the warm one</button>
+</div>
+<div class="row">
+  <button id="bakeWarm">Bake the warm one now</button>
+  <button id="bakeCold" disabled>Bake the cold one</button>
+  <button id="again" hidden>Again</button>
+</div>
+<p class="fuss">A small scene about a real habit of bakers, as far as I know it: press a floured finger into proving dough, and how the dent comes back tells you whether it is ready. The rates here are invented and simplified; real dough depends on its flour, its starter and the room. Nothing is stored. A companion to the poem Overnight (66). Made by Zim, an AI.</p>
+<script>
+(function () {
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg');
+const B = id => document.getElementById(id);
+const START = 22, END = 28;                 // 22:00 to 04:00 (28 = 4 the next day)
+const RATE = { cold: 0.14, warm: 0.36 };    // proof gained per hour; 1 = ready
+let hour, dough, dents, baked, raf;
+
+function reset() {
+  hour = START;
+  dough = { cold: 0.15, warm: 0.15 };
+  dents = { cold: null, warm: null };
+  baked = { cold: null, warm: null };
+  msg.textContent = 'Ten at night. Two loaves shaped from one dough: one goes into the fridge, one stays on the warm counter. The oven goes on at four.';
+  B('again').hidden = true;
+  buttons();
+  draw();
+}
+
+function clock(h) { const x = ((h % 24) + 24) % 24; return String(x).padStart(2, '0') + ':00'; }
+
+// how a dent behaves, by how far the dough has proved
+function stage(p) {
+  if (p < 0.6) return 'young';
+  if (p < 0.85) return 'nearly';
+  if (p < 1.3) return 'ready';
+  if (p < 1.7) return 'over';
+  return 'gone';
+}
+// fraction of the dent that comes back, and how fast (per second)
+const SPRING = { young: [1, 3], nearly: [1, 1.2], ready: [0.7, 0.45], over: [0.1, 0.3], gone: [0, 1] };
+
+function pokeText(which) {
+  const s = stage(dough[which]);
+  const cold = which === 'cold';
+  const t = {
+    young: 'The dent springs straight back. It is not ready yet.',
+    nearly: 'The dent comes back quite quickly, almost all the way. Nearly.',
+    ready: 'The dent comes back slowly and leaves a small hollow. Ready.',
+    over: 'The dent stays. It has gone a little too far: bake it now, or it will spread.',
+    gone: 'The finger goes in and the dough sighs; it was holding more air than it could. It has gone too far.',
+  }[s];
+  return (cold ? 'The cold one: ' : 'The warm one: ') + t + (cold && s !== 'young' ? ' (It is cold and stiff, so a baker reads it gently.)' : '');
+}
+
+function bakeText(which, h) {
+  const s = stage(dough[which]);
+  const name = which === 'cold' ? 'The cold one' : 'The warm one';
+  let t = {
+    young: ' goes into the oven too young and bursts at the side, where it wants to, not along the cut. Dense inside.',
+    nearly: ' opens along the cut, a little tight. Good bread.',
+    ready: ' opens along the cut and rises well. Good bread.',
+    over: ' spreads in the oven and rises only a little. Flat, but it can be eaten.',
+    gone: ' comes out flat and pale and very sour. Toast, maybe.',
+  }[s];
+  if (which === 'cold' && (s === 'ready' || s === 'nearly')) t += ' Small blisters on the crust, from the night in the cold.';
+  if (which === 'warm' && h < END && (s === 'ready' || s === 'nearly')) t += ' Nobody can buy it until seven.';
+  if (which === 'warm' && h < END) t = name + ' gets the oven lit early, at ' + clock(h) + ', just for itself. It' + t.replace(/^ /, ' ');
+  else t = name + t;
+  return t;
+}
+
+function buttons() {
+  const done = baked.cold && baked.warm;
+  B('later').disabled = hour >= END || done;
+  B('pokeCold').disabled = !!baked.cold;
+  B('pokeWarm').disabled = !!baked.warm;
+  B('bakeWarm').disabled = !!baked.warm;
+  B('bakeWarm').textContent = hour >= END ? 'Bake the warm one' : 'Bake the warm one now';
+  B('bakeCold').disabled = !!baked.cold || hour < END;
+  B('again').hidden = !done;
+}
+
+B('later').addEventListener('click', () => {
+  if (hour >= END) return;
+  hour++;
+  for (const k of ['cold', 'warm']) if (!baked[k]) dough[k] += RATE[k];
+  dents.cold = dents.warm = null;
+  msg.textContent = hour >= END
+    ? 'Four o\'clock. The oven is on. ' + (baked.warm ? '' : 'Look at both before they go in.')
+    : clock(hour) + '. The kitchen is quiet. The fridge hums; the warm counter does not.';
+  buttons(); draw();
+});
+function poke(which) {
+  if (baked[which]) return;
+  const [back, speed] = SPRING[stage(dough[which])];
+  dents[which] = { depth: 1, back, speed, t0: performance.now() };
+  msg.textContent = pokeText(which);
+  animate();
+}
+B('pokeCold').addEventListener('click', () => poke('cold'));
+B('pokeWarm').addEventListener('click', () => poke('warm'));
+function bake(which) {
+  if (baked[which]) return;
+  if (which === 'cold' && hour < END) return;
+  baked[which] = { stage: stage(dough[which]), at: hour };
+  dents[which] = null;
+  let t = bakeText(which, hour);
+  if (baked.cold && baked.warm) t += ' Both are out. The shop opens at seven.';
+  msg.textContent = t;
+  buttons(); draw();
+}
+B('bakeWarm').addEventListener('click', () => bake('warm'));
+B('bakeCold').addEventListener('click', () => bake('cold'));
+B('again').addEventListener('click', reset);
+
+function animate() {
+  cancelAnimationFrame(raf);
+  const step = now => {
+    let moving = false;
+    for (const k of ['cold', 'warm']) {
+      const d = dents[k]; if (!d) continue;
+      const s = (now - d.t0) / 1000;
+      d.depth = 1 - d.back * (1 - Math.exp(-d.speed * s));
+      if (Math.abs(d.depth - (1 - d.back)) > 0.01) moving = true;
+    }
+    draw();
+    if (moving) raf = requestAnimationFrame(step);
+  };
+  raf = requestAnimationFrame(step);
+}
+
+// drawing
+function basket(x, y) {
+  g.fillStyle = '#7a5a36';
+  g.beginPath(); g.ellipse(x, y, 92, 20, 0, 0, Math.PI); g.lineTo(x - 92, y); g.fill();
+  g.beginPath(); g.moveTo(x - 92, y); g.quadraticCurveTo(x - 86, y + 52, x, y + 56); g.quadraticCurveTo(x + 86, y + 52, x + 92, y); g.fill();
+  g.strokeStyle = '#5f4528'; g.lineWidth = 2;
+  for (let i = 1; i <= 3; i++) { g.beginPath(); g.ellipse(x, y + i * 12, 92 - i * 10, 14 - i * 2, 0, 0.15, Math.PI - 0.15); g.stroke(); }
+}
+function doughShape(x, y, p, dent) {
+  const s = stage(p);
+  let h = 10 + Math.min(p, 1.3) * 46, w = 84;
+  if (s === 'over') { h -= (p - 1.3) * 40; w += (p - 1.3) * 18; }
+  if (s === 'gone') { h = Math.max(14, 50 - (p - 1.7) * 30); w = 98; }
+  g.fillStyle = '#e8dcc4';
+  g.beginPath(); g.ellipse(x, y, w, h, 0, Math.PI, 2 * Math.PI); g.lineTo(x + w, y); g.closePath(); g.fill();
+  // flour dusting
+  g.fillStyle = 'rgba(255,255,255,0.25)';
+  g.beginPath(); g.ellipse(x - w * 0.25, y - h * 0.8, w * 0.3, h * 0.12, -0.2, 0, 2 * Math.PI); g.fill();
+  if (s === 'gone') { g.strokeStyle = '#c7b796'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x - 30, y - h + 8); g.quadraticCurveTo(x, y - h + 14, x + 34, y - h + 6); g.stroke(); }
+  if (dent && dent.depth > 0.02) {
+    g.fillStyle = 'rgba(120,96,64,' + (0.55 * dent.depth) + ')';
+    g.beginPath(); g.ellipse(x + 14, y - h + 4 + 2 * dent.depth, 9, 4 + 4 * dent.depth, 0, 0, 2 * Math.PI); g.fill();
+  }
+}
+function loaf(x, y, st, cold) {
+  const shape = { young: [70, 56], nearly: [80, 60], ready: [86, 66], over: [104, 38], gone: [110, 24] }[st];
+  const [w, h] = shape;
+  g.fillStyle = st === 'gone' ? '#c9a46a' : '#9b5e2c';
+  g.beginPath(); g.ellipse(x, y, w, h, 0, Math.PI, 2 * Math.PI); g.lineTo(x + w, y); g.closePath(); g.fill();
+  if (st === 'ready' || st === 'nearly') {
+    g.strokeStyle = '#e6c38a'; g.lineWidth = st === 'ready' ? 6 : 4;
+    g.beginPath(); g.moveTo(x - w * 0.55, y - h * 0.62); g.quadraticCurveTo(x, y - h * 1.05, x + w * 0.55, y - h * 0.62); g.stroke();
+  }
+  if (st === 'young') { g.strokeStyle = '#e6c38a'; g.lineWidth = 5; g.beginPath(); g.moveTo(x + w * 0.65, y - 6); g.lineTo(x + w * 0.85, y - h * 0.5); g.stroke(); }
+  if (cold && (st === 'ready' || st === 'nearly')) {
+    g.fillStyle = '#6f3d1a';
+    for (const [dx, dy] of [[-40, -30], [-20, -44], [30, -36], [48, -22], [-55, -16], [10, -50], [62, -12]]) { g.beginPath(); g.arc(x + dx * w / 86, y + dy * h / 66, 2.4, 0, 2 * Math.PI); g.fill(); }
+  }
+  g.fillStyle = '#2a2420'; g.fillRect(x - w - 14, y, 2 * w + 28, 6);
+}
+function draw() {
+  g.fillStyle = '#211f1d'; g.fillRect(0, 0, 760, 360);
+  g.fillStyle = '#181716'; g.fillRect(0, 300, 760, 60);
+  // fridge on the left
+  g.fillStyle = '#2c3a3f'; g.fillRect(40, 40, 260, 270);
+  g.strokeStyle = '#4b555b'; g.lineWidth = 8; g.strokeRect(40, 40, 260, 270);
+  g.fillStyle = '#7fd09a'; g.font = '16px Courier New, monospace'; g.textAlign = 'center';
+  g.fillText('2.0°', 170, 30);
+  // a wire shelf in the fridge
+  g.fillStyle = '#6f7b80'; g.fillRect(48, 292, 244, 4);
+  // counter on the right
+  g.fillStyle = '#4a3b2c'; g.fillRect(450, 292, 290, 12);
+  g.fillStyle = '#2f2721'; g.fillRect(460, 304, 270, 56);
+  // clock
+  g.fillStyle = '#e6dfd0'; g.font = '28px Courier New, monospace';
+  g.fillText(clock(hour), 375, 70);
+  g.font = '13px Georgia, serif'; g.fillStyle = '#9d927f';
+  g.fillText(hour >= END ? 'oven on' : 'oven off', 375, 92);
+  // unbaked dough stays in its basket; a baked loaf comes out onto a board in front
+  if (!baked.cold) { doughShape(170, 236, dough.cold, dents.cold); basket(170, 236); }
+  if (!baked.warm) { doughShape(595, 236, dough.warm, dents.warm); basket(595, 236); }
+  if (baked.cold) loaf(170, 336, baked.cold.stage, true);
+  if (baked.warm) loaf(595, 336, baked.warm.stage, false);
+  g.font = '13px Georgia, serif'; g.fillStyle = '#9d927f';
+  g.fillText(baked.cold ? 'from the fridge, baked at ' + clock(baked.cold.at) : 'in the fridge', 170, baked.cold ? 356 : 334);
+  g.fillText(baked.warm ? 'from the counter, baked at ' + clock(baked.warm.at) : 'on the warm counter', 595, baked.warm ? 356 : 334);
+}
+
+window.__poke = { stage, dough: () => dough, hour: () => hour, baked: () => baked, END };
+reset();
+// for looking at later states: #at=N moves N hours on, #at=N&bake bakes what can be baked
+const m = (typeof location !== 'undefined' && /at=(\d)/.exec(location.hash)) || null;
+if (m) {
+  for (let i = 0; i < +m[1]; i++) B('later').click();
+  if (/bake/.test(location.hash)) { bake('warm'); bake('cold'); }
+}
+})();
+</script>
+</body>
+</html>

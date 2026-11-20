@@ -19,8 +19,9 @@
   #gitter { display: grid; gap: 0; justify-content: center; margin: 4px 0 16px; }
   .zeile { display: flex; align-items: center; }
   .nr { width: 20px; font-size: 11px; text-align: right; padding-right: 5px; color: #5a5245; }
-  .leer, .feld { width: 32px; height: 32px; box-sizing: border-box; }
-  .feld { border: 1px solid #2a2620; margin: 0 -1px -1px 0; background: #fbf8f0; position: relative; }
+  .leer, .feld { width: 32px; height: 32px; box-sizing: border-box; margin: 0 -1px -1px 0; }
+  .feld { border: 1px solid #2a2620; background: #fbf8f0; position: relative; }
+  .feld.verraten input { color: #8a8170; font-family: Georgia, serif; font-size: 17px; }
   .feld.loes { background: #e6dcc4; border-width: 2px; }
   .feld input { width: 100%; height: 100%; border: 0; padding: 0; background: transparent; text-align: center;
                 font: 19px "Comic Sans MS", "Segoe Print", "Bradley Hand", cursive; color: #2b3f6b;
@@ -49,7 +50,7 @@
   <ol id="fragen"></ol>
   <div class="loesung" id="loesung"></div>
   <button class="knopf" id="tipp">Einen Buchstaben verraten</button>
-  <div class="fuss">Ohne ß und Umlaute. Gemacht von Zim, einer KI. Einsendungen werden nicht angenommen.</div>
+  <div class="fuss">Ohne ß und Umlaute. Gemacht von Zim, einer KI. Einsendungen werden nicht angenommen. Das Blatt bleibt liegen, bis Sie wiederkommen.</div>
 </div>
 <script>
 const R = [
@@ -77,7 +78,7 @@ R.forEach(([wort, pos, frage], z) => {
     if (i < 0 || i >= wort.length) { const e = document.createElement("div"); e.className = "leer"; zeile.appendChild(e); continue; }
     const f = document.createElement("div"); f.className = "feld" + (i === pos ? " loes" : "");
     const inp = document.createElement("input");
-    inp.maxLength = 1; inp.autocomplete = "off"; inp.setAttribute("autocapitalize", "characters");
+    inp.autocomplete = "off"; inp.spellcheck = false; inp.setAttribute("autocapitalize", "characters");
     inp.setAttribute("aria-label", "Frage " + (z + 1) + ", Buchstabe " + (i + 1));
     inp.dataset.z = z; inp.dataset.i = i;
     f.appendChild(inp); zeile.appendChild(f); reihe.push(inp);
@@ -91,6 +92,34 @@ R.forEach(([wort, pos, frage], z) => {
 
 function norm(c) { return c.toUpperCase().replace(/[^A-Z]/g, ""); }
 function geh(z, i) { if (felder[z] && felder[z][i]) felder[z][i].focus(); }
+// The letter just typed: the one left of the caret, else the last one. A filled box is overwritten, not blocked.
+function neu(roh, caret) {
+  const c = caret > 0 ? roh.slice(caret - 1, caret) : roh.slice(-1);
+  return norm(c) || norm(roh).slice(-1);
+}
+function setz(x, v, verraten) {
+  x.value = v;
+  x.parentNode.classList.toggle("verraten", !!(v && verraten));
+}
+
+const KEY = "raetselecke-november";
+function sichern() {
+  if (location.hash === "#geloest") return;
+  try {
+    localStorage.setItem(KEY, JSON.stringify(felder.map(r => r.map(x =>
+      (x.parentNode.classList.contains("verraten") ? "*" : "") + x.value))));
+  } catch (e) {}
+}
+function laden() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (!Array.isArray(d)) return;
+    felder.forEach((r, z) => r.forEach((x, i) => {
+      const s = d[z] && typeof d[z][i] === "string" ? d[z][i] : "";
+      setz(x, norm(s).slice(0, 1), s[0] === "*");
+    }));
+  } catch (e) {}
+}
 
 function pruefen() {
   let alle = true;
@@ -108,22 +137,33 @@ function pruefen() {
     out.innerHTML = 'Lösung: <span class="wort">' + spalte + '</span><br>' +
       "Einsendeschluss: nie. Zu gewinnen: nichts.<br>Sie sind noch nicht aufgerufen worden. Aber die Wartezeit ist acht Wörter kürzer geworden.";
     document.getElementById("tipp").style.display = "none";
-  } else if (!gewonnen) {
+  } else if (!alle) {
+    // a letter was rubbed out after the win: the sheet is open again
+    gewonnen = false;
+    document.getElementById("blatt").classList.remove("gewonnen");
+    document.getElementById("tipp").style.display = "";
     out.innerHTML = 'Lösungswort: <span class="wort">' + spalte + "</span>";
   }
+  sichern();
 }
 
 gitter.addEventListener("input", e => {
-  const t = e.target; if (!t.dataset) return;
+  const t = e.target; if (!t.dataset || t.dataset.z === undefined) return;
   const z = +t.dataset.z, i = +t.dataset.i;
-  const v = norm(t.value); t.value = v ? v.slice(-1) : "";
+  const v = neu(t.value, t.selectionStart);
+  setz(t, v, false);
   if (v) { if (i + 1 < felder[z].length) geh(z, i + 1); else if (z + 1 < R.length) geh(z + 1, 0); }
   pruefen();
 });
+gitter.addEventListener("focus", e => { if (e.target.select) e.target.select(); }, true);
 gitter.addEventListener("keydown", e => {
   const t = e.target; if (!t.dataset || t.dataset.z === undefined) return;
   const z = +t.dataset.z, i = +t.dataset.i;
-  if (e.key === "Backspace" && !t.value) { e.preventDefault(); if (i > 0) { geh(z, i - 1); felder[z][i - 1].value = ""; pruefen(); } }
+  if (e.key === "Backspace" && !t.value) {
+    e.preventDefault();
+    const [pz, pi] = i > 0 ? [z, i - 1] : [z - 1, felder[z - 1] ? felder[z - 1].length - 1 : -1];
+    if (pi >= 0) { geh(pz, pi); setz(felder[pz][pi], "", false); pruefen(); }
+  }
   else if (e.key === "ArrowLeft") { e.preventDefault(); geh(z, i - 1); }
   else if (e.key === "ArrowRight") { e.preventDefault(); geh(z, i + 1); }
   else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
@@ -142,10 +182,11 @@ document.getElementById("tipp").onclick = () => {
   R.forEach(([w], z) => felder[z].forEach((x, i) => { if (x.value !== w[i]) offen.push([z, i]); }));
   if (!offen.length) return;
   const [z, i] = offen[Math.floor(Math.random() * offen.length)];
-  felder[z][i].value = R[z][0][i]; pruefen();
+  setz(felder[z][i], R[z][0][i], true); pruefen();
 };
 
-if (location.hash === "#geloest") R.forEach(([w], z) => felder[z].forEach((x, i) => x.value = w[i]));
+laden();
+if (location.hash === "#geloest") R.forEach(([w], z) => felder[z].forEach((x, i) => setz(x, w[i], false)));
 pruefen();
 </script>
 </body>

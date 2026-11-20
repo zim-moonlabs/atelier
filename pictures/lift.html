@@ -50,7 +50,11 @@ function nextRandomFloor() {
 }
 function call() {
   if (called) return;
-  if (phase === 'open' && Math.round(floor) === HERE) { phaseT = 0; return; } // hold the doors
+  if (Math.abs(floor - HERE) < 0.02) {             // the car is here: hold or reopen the doors
+    if (phase === 'open') { phaseT = 0; return; }
+    if (phase === 'opening') return;
+    if (phase === 'closing') { phase = 'opening'; phaseT = 0; return; }
+  }
   called = true; calls++;
   try { localStorage.setItem('zim-lift-calls', calls); } catch (e) {}
   if (!queue.includes(HERE)) queue.push(HERE);
@@ -140,11 +144,12 @@ function draw() {
   const glow = g.createRadialGradient(CX - 150 * S, CY - 330 * S, 0, CX - 150 * S, CY - 330 * S, 320 * S);
   glow.addColorStop(0, 'rgba(255,230,170,0.10)'); glow.addColorStop(1, 'rgba(255,230,170,0)');
   g.fillStyle = glow; g.fillRect(0, 0, W, H);
-  g.fillStyle = '#1e1c18'; g.fillRect(0, CY + 175 * S, W, H);          // floor
+  const dw = 95 * S, dh = 170 * S, FL = CY + dh;   // the floor starts where the doors end
+  g.fillStyle = '#1e1c18'; g.fillRect(0, FL, W, H);                    // floor
   g.fillStyle = 'rgba(255,240,200,0.03)';
-  for (let i = -6; i < 6; i++) g.fillRect(CX + i * 60 * S, CY + 175 * S, 1, H);
+  for (let i = -6; i < 6; i++) g.fillRect(CX + i * 60 * S, FL, 1, H);
+  g.fillStyle = '#2a2722'; g.fillRect(0, FL - 9 * S, W, 9 * S);         // skirting board
 
-  const dw = 95 * S, dh = 170 * S;
   // frame
   g.fillStyle = '#5c5442'; g.fillRect(CX - dw - 16 * S, CY - dh - 16 * S, dw * 2 + 32 * S, dh * 2 + 16 * S);
   drawCar(dw, dh);
@@ -160,6 +165,11 @@ function draw() {
     g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(x0 + dw * 0.15, CY - dh * 0.8, dw * 0.7, 2 * S);
     g.restore();
   }
+  // sill: a brushed metal threshold the doors run in, flush with the floor
+  const sill = g.createLinearGradient(0, FL, 0, FL + 9 * S);
+  sill.addColorStop(0, '#8a8578'); sill.addColorStop(1, '#4d4a43');
+  g.fillStyle = sill; g.fillRect(CX - dw - 16 * S, FL, dw * 2 + 32 * S, 9 * S);
+  g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(CX - dw, FL + 3 * S, dw * 2, 1.2 * S); // the groove
   // when the car passes our floor without stopping, light shows in the seam between the doors
   const pass = phase === 'moving' && target !== HERE ? Math.max(0, 1 - Math.abs(floor - HERE) * 2.5) : 0;
   if (pass > 0) {
@@ -180,8 +190,14 @@ function draw() {
   g.beginPath(); g.arc(bx, by, 8 * S, 0, 7); g.fill();
   if (lamp > 0.05) { g.fillStyle = `rgba(255,190,100,${0.15 * lamp})`; g.beginPath(); g.arc(bx, by, 22 * S, 0, 7); g.fill(); }
   // small floor number plate
-  g.fillStyle = '#c9b88a'; g.font = `${16 * S}px Georgia, serif`; g.textAlign = 'center';
-  g.fillText(String(HERE), CX - dw - 55 * S, CY - 10 * S);
+  const px = CX - dw - 55 * S, py = CY - 10 * S;
+  g.fillStyle = '#4a4335'; g.fillRect(px - 17 * S, py - 21 * S, 34 * S, 42 * S);   // brass plate, darkened
+  g.strokeStyle = 'rgba(201,184,138,0.45)'; g.lineWidth = 1 * S;
+  g.strokeRect(px - 13 * S, py - 17 * S, 26 * S, 34 * S);                         // engraved rim
+  g.fillStyle = 'rgba(201,184,138,0.6)';                                          // two screws
+  for (const sy of [-19, 19]) { g.beginPath(); g.arc(px, py + sy * S, 1.3 * S, 0, 7); g.fill(); }
+  g.fillStyle = '#c9b88a'; g.font = `${18 * S}px Georgia, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(String(HERE), px, py + 1 * S);
   // chime as a faint ring above the doors
   if (chime > 0) { g.strokeStyle = `rgba(255,240,200,${chime * 0.3})`; g.lineWidth = 1.5 * S;
     g.beginPath(); g.arc(CX, CY - dh - 30 * S, (1.2 - chime) * 40 * S + 6 * S, 0, 7); g.stroke(); }

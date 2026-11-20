@@ -53,8 +53,9 @@ function showCount() { countEl.textContent = boils ? '· boiled ' + boils + (boi
 showCount();
 
 function switchOn() {
-  if (phase !== 'off') return;
-  phase = 'heating'; t = 0;
+  if (phase === 'heating') return;
+  // still warm from the last boil: it starts from there, but takes a few seconds at least
+  phase = 'heating'; t = Math.min(heat * BOIL, BOIL - 3); clickAt = -1;
 }
 // on the glass a finger draws in the fog; anywhere else it puts the kettle on
 let drawing = false;

@@ -11,7 +11,8 @@
   canvas { display: block; width: 100vw; height: 100vh; }
   .msg { position: fixed; left: 0; right: 0; top: 14px; text-align: center; color: #e6dfcc; min-height: 1.4em;
          pointer-events: none; font: italic 16px/1.4 Georgia, serif; transition: opacity 1.5s; padding: 0 12px; }
-  .bar { position: fixed; left: 0; right: 0; bottom: 58px; display: flex; justify-content: center; gap: 8px; }
+  .bar { position: fixed; right: 12px; top: 12px; display: flex; gap: 8px; }
+  @media (max-width: 640px) { .msg { top: 56px; } }
   button { font: inherit; background: #262b36; color: #d9d4c7; border: 1px solid #4b5262; border-radius: 4px;
            padding: 6px 13px; cursor: pointer; }
   button:hover, button:focus-visible { background: #323846; outline: none; border-color: #8a91a2; }
@@ -55,6 +56,7 @@ let engine = 1;       // van engine 1 on, 0 off
 let trainX = 0, trainDir = 1, trainLen = 0, trainSpeed = 0, cars = [];
 let puffs = [];
 let lastMsg = '';
+let geom = null;      // last drawn layout of post and barrier, for the headless check
 
 function say(s) {
   if (s === lastMsg) return;
@@ -114,7 +116,7 @@ function step(dt) {
   }
   // exhaust puffs while the engine runs
   if (engine > 0.2 && Math.random() < dt * 6 * engine) puffs.push({ x: 0, y: 0, a: 0.35 * engine, r: 1 });
-  for (const p of puffs) { p.y -= dt * 14; p.x -= dt * 6; p.r += dt * 5; p.a -= dt * 0.18; }
+  for (const p of puffs) { p.y += dt * 5; p.x -= dt * 16; p.r += dt * 4; p.a -= dt * 0.22; }
   puffs = puffs.filter(p => p.a > 0);
   bell(dt);
 }
@@ -149,6 +151,7 @@ function bell(dt) {
 
 // ---- drawing
 const STARS = Array.from({ length: 40 }, () => [Math.random(), Math.random(), Math.random() < 0.2 ? 2 : 1]);
+const BALLAST = Array.from({ length: 260 }, () => [Math.random(), Math.random(), Math.random() < 0.3 ? 2 : 1]);
 function draw(time) {
   const hz = H * 0.46;          // horizon
   const railY = H * 0.55;       // near rail
@@ -180,39 +183,85 @@ function draw(time) {
   g.moveTo(cx - roadAt(hz), hz); g.lineTo(cx + roadAt(hz), hz);
   g.lineTo(cx + roadAt(H), H); g.lineTo(cx - roadAt(H), H); g.closePath(); g.fill();
 
-  // track bed and rails, across everything
+  // track bed: ballast, sleepers, and a deck where the road crosses
   const farRail = railY - H * 0.025;
-  g.fillStyle = '#1b1d21'; g.fillRect(0, farRail - H * 0.012, W, railY - farRail + H * 0.024);
-  g.strokeStyle = '#6b6f78'; g.lineWidth = Math.max(1, H * 0.003);
+  const bedTop = farRail - H * 0.012, bedBot = railY + H * 0.012;
+  g.fillStyle = '#1b1d21'; g.fillRect(0, bedTop, W, bedBot - bedTop);
+  g.fillStyle = 'rgba(120,118,112,0.16)';
+  for (const [bx, by, bs] of BALLAST) g.fillRect(bx * W, bedTop + by * (bedBot - bedTop), bs, bs);
+  const deckL = y => cx - roadAt(y) * 1.06, deckR = y => cx + roadAt(y) * 1.06;
+  const slTop = farRail - H * 0.006, slBot = railY + H * 0.007;
+  const slGap = Math.max(14, W * 0.022), slW = Math.max(4, slGap * 0.38);
+  g.fillStyle = '#2a2723';
+  for (let sx = (W * 0.5) % slGap - slGap; sx < W; sx += slGap) {
+    if (sx + slW > deckL(slBot) && sx < deckR(slBot)) continue;   // under the deck
+    g.beginPath();                   // a slight lean outward, as they recede from the middle
+    const lean = (sx - cx) / W * slW * 0.6;
+    g.moveTo(sx + lean, slTop); g.lineTo(sx + slW + lean, slTop);
+    g.lineTo(sx + slW, slBot); g.lineTo(sx, slBot); g.closePath(); g.fill();
+  }
+  // the deck: concrete panels with seams, worn paler in the wheel tracks
+  g.fillStyle = '#34363a';
+  g.beginPath(); g.moveTo(deckL(slTop), slTop); g.lineTo(deckR(slTop), slTop);
+  g.lineTo(deckR(slBot), slBot); g.lineTo(deckL(slBot), slBot); g.closePath(); g.fill();
+  g.strokeStyle = '#26282c'; g.lineWidth = 1;
+  for (let k = 1; k < 4; k++) {
+    const f = k / 4;
+    g.beginPath(); g.moveTo(deckL(slTop) + (deckR(slTop) - deckL(slTop)) * f, slTop);
+    g.lineTo(deckL(slBot) + (deckR(slBot) - deckL(slBot)) * f, slBot); g.stroke();
+  }
+  g.fillStyle = 'rgba(200,200,205,0.05)';
+  for (const f of [0.3, 0.7]) {
+    const a = deckL(slTop) + (deckR(slTop) - deckL(slTop)) * f, b = deckL(slBot) + (deckR(slBot) - deckL(slBot)) * f;
+    const hw = (deckR(slBot) - deckL(slBot)) * 0.06;
+    g.beginPath(); g.moveTo(a - hw * 0.8, slTop); g.lineTo(a + hw * 0.8, slTop);
+    g.lineTo(b + hw, slBot); g.lineTo(b - hw, slBot); g.closePath(); g.fill();
+  }
+  // rails, with a dark flangeway beside each one on the deck
+  const rw = Math.max(1, H * 0.003);
+  g.fillStyle = '#0d0e10';
+  for (const y of [farRail, railY]) g.fillRect(deckL(y), y + rw * 0.6, deckR(y) - deckL(y), rw * 1.4);
+  g.strokeStyle = '#6b6f78'; g.lineWidth = rw;
   for (const y of [farRail, railY]) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  g.strokeStyle = 'rgba(190,195,205,0.35)'; g.lineWidth = Math.max(0.5, rw * 0.4);   // polished top
+  for (const y of [farRail, railY]) { g.beginPath(); g.moveTo(0, y - rw * 0.3); g.lineTo(W, y - rw * 0.3); g.stroke(); }
 
   // train
   const flash = ringing() && Math.floor(time / 600) % 2 === 0;
   if (state === 'train') drawTrain(farRail);
 
+  // signal post on the right, near side, standing clear of the barrier's pedestal
+  const u = Math.min(W, H);
+  const lr = Math.max(4, u * 0.012), ly0 = lr * 3.3;          // lamp radius, half the lamp box
+  const py = railY + H * 0.03;
+  const px = cx + roadAt(py) + ly0 + u * 0.05;
+  const pedX = px - ly0 - u * 0.025;                         // barrier pedestal, between road and post
+  const postH = u * 0.17;
+
   // red light glow on the road
   if (ringing()) {
-    const gx = flash ? cx + roadAt(railY) * 1.25 - W * 0.015 : cx + roadAt(railY) * 1.25 + W * 0.015;
+    const gx = flash ? px - lr * 1.6 : px + lr * 1.6;
     const rg = g.createRadialGradient(gx, railY + H * 0.08, 0, gx, railY + H * 0.08, W * 0.25);
     rg.addColorStop(0, 'rgba(200,40,30,0.18)'); rg.addColorStop(1, 'rgba(200,40,30,0)');
     g.fillStyle = rg; g.fillRect(0, hz, W, H - hz);
   }
 
-  // signal post on the right, near side
-  const px = cx + roadAt(railY) * 1.25, py = railY + H * 0.03;
-  const postH = H * 0.16;
-  g.fillStyle = '#3a3e46'; g.fillRect(px - 2, py - postH, 4, postH);
+  const postW = Math.max(3, u * 0.006);
+  g.fillStyle = '#3a3e46'; g.fillRect(px - postW / 2, py - postH, postW, postH);
+  g.fillStyle = '#2b2e34'; g.fillRect(px - postW * 1.6, py - postW, postW * 3.2, postW);   // foot
   // crossbuck
-  g.strokeStyle = '#cfc9bb'; g.lineWidth = Math.max(2, W * 0.004);
-  const cbY = py - postH - H * 0.01, cbR = H * 0.025;
+  g.strokeStyle = '#cfc9bb'; g.lineWidth = Math.max(2, u * 0.006);
+  const cbY = py - postH - u * 0.012, cbR = u * 0.03;
   g.beginPath(); g.moveTo(px - cbR, cbY - cbR * 0.5); g.lineTo(px + cbR, cbY + cbR * 0.5);
   g.moveTo(px + cbR, cbY - cbR * 0.5); g.lineTo(px - cbR, cbY + cbR * 0.5); g.stroke();
-  // two lamps
-  const lr = Math.max(4, H * 0.011), ly = py - postH * 0.62;
+  // two lamps, each under a small hood
+  const ly = py - postH * 0.62;
   g.fillStyle = '#101216'; g.fillRect(px - lr * 3.3, ly - lr * 1.4, lr * 6.6, lr * 2.8);
   for (const [dx, on] of [[-1.6, ringing() && flash], [1.6, ringing() && !flash]]) {
     g.beginPath(); g.arc(px + dx * lr, ly, lr, 0, Math.PI * 2);
     g.fillStyle = on ? '#ff3b2a' : '#3a1512'; g.fill();
+    g.strokeStyle = '#2a2e35'; g.lineWidth = Math.max(1.5, lr * 0.3);   // a visor above the lens
+    g.beginPath(); g.arc(px + dx * lr, ly, lr * 1.2, Math.PI * 1.12, Math.PI * 1.88); g.stroke();
     if (on) {
       const gl = g.createRadialGradient(px + dx * lr, ly, 0, px + dx * lr, ly, lr * 6);
       gl.addColorStop(0, 'rgba(255,60,40,0.45)'); gl.addColorStop(1, 'rgba(255,60,40,0)');
@@ -220,13 +269,19 @@ function draw(time) {
     }
   }
 
-  // barrier: pivot at the post, swings from up to across the road
-  const pivX = px - W * 0.006, pivY = py - postH * 0.25;
-  const len = (px - (cx - roadAt(railY + H * 0.03))) * 1.12;
+  // barrier: its own pedestal with a counterweight; swings from up to across the road
+  const bw = Math.max(4, u * 0.011);
+  const pedH = u * 0.05, pedW = bw * 2.6;
+  const pivX = pedX, pivY = py - pedH * 0.85;
+  const len = (pivX - (cx - roadAt(py))) * 1.04;
   const e = arm < 0.5 ? 2 * arm * arm : 1 - Math.pow(-2 * arm + 2, 2) / 2;
   const ang = -Math.PI / 2 - e * Math.PI / 2;   // -90deg up, -180deg pointing left
+  g.fillStyle = '#2c3037'; g.fillRect(pedX - pedW / 2, py - pedH, pedW, pedH);   // the housing
+  g.fillStyle = '#3b4048'; g.fillRect(pedX - pedW / 2, py - pedH, pedW, Math.max(1, pedH * 0.08));
   g.save(); g.translate(pivX, pivY); g.rotate(ang);
-  const bw = Math.max(4, H * 0.009);
+  // short tail behind the pivot with the weight on it
+  g.fillStyle = '#3a3e46'; g.fillRect(-len * 0.1, -bw * 0.3, len * 0.1, bw * 0.6);
+  g.fillStyle = '#23262b'; g.fillRect(-len * 0.1 - bw * 0.4, -bw * 1.1, bw * 1.6, bw * 2.2);
   const stripes = 9;
   for (let i = 0; i < stripes; i++) {
     g.fillStyle = i % 2 ? '#e8e2d4' : '#b8302a';
@@ -237,7 +292,8 @@ function draw(time) {
     g.fillStyle = flash ? '#ff4a35' : '#5a1a15'; g.fill();
   }
   g.restore();
-  g.fillStyle = '#4a4e57'; g.beginPath(); g.arc(pivX, pivY, bw * 0.9, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#4a4e57'; g.beginPath(); g.arc(pivX, pivY, bw * 0.8, 0, Math.PI * 2); g.fill();
+  geom = { px, pedX, pivX, lampHalf: ly0, cbR, bw, len, roadLeft: cx - roadAt(py), weightRight: pivX + bw * 1.2 };
 
   // cyclist, from behind, waiting
   drawCyclist(cx - roadAt(H * 0.68) * 0.25, H * 0.68, H * 0.11);
@@ -248,11 +304,22 @@ function draw(time) {
 
 function drawTrain(railTop) {
   const carW = W * 0.6, gap = W * 0.02, carH = H * 0.11;
-  const top = railTop - carH - H * 0.008;
+  const under = H * 0.02, wr = H * 0.0075;   // underframe height, wheel radius
+  const top = railTop - carH - under;
   for (let i = 0; i < cars.length; i++) {
     const idx = trainDir > 0 ? cars.length - 1 - i : i;   // the front leads
     const x = (trainX + i * 0.62) * W;
-    if (x > W || x + carW < 0) continue;
+    if (x > W + gap || x + carW < 0) continue;
+    // gangway to the next car
+    if (i < cars.length - 1) { g.fillStyle = '#161920'; g.fillRect(x + carW - 1, top + carH * 0.15, gap + 2, carH * 0.75); }
+    // underframe, two bogies, their wheels on the rail
+    g.fillStyle = '#121418'; g.fillRect(x + carW * 0.03, top + carH, carW * 0.94, under * 0.45);
+    for (const bf of [0.13, 0.87]) {
+      const bx = x + carW * bf, bh = carW * 0.075;
+      g.fillStyle = '#17191e'; g.fillRect(bx - bh, top + carH + under * 0.2, bh * 2, under * 0.45);
+      g.fillStyle = '#0b0c0f';
+      for (const d of [-0.55, 0.55]) { g.beginPath(); g.arc(bx + d * bh, railTop - wr, wr, 0, Math.PI * 2); g.fill(); }
+    }
     g.fillStyle = '#2b3140'; g.fillRect(x, top, carW, carH);
     g.fillStyle = '#1d212b'; g.fillRect(x, top + carH * 0.82, carW, carH * 0.18);
     const wins = cars[idx];
@@ -294,7 +361,12 @@ function drawCyclist(x, y, h) {
 
 function drawVan(x, y, h, flash) {
   const w = h * 1.25;
-  g.fillStyle = '#2a2e35'; g.fillRect(x - w / 2, y - h, w, h);
+  // shadow and tyres under the body
+  g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x - w * 0.52, y + h * 0.03, w * 1.04, h * 0.025);
+  g.fillStyle = '#0b0c0e';
+  g.fillRect(x - w * 0.44, y - h * 0.02, w * 0.17, h * 0.065);
+  g.fillRect(x + w * 0.27, y - h * 0.02, w * 0.17, h * 0.065);
+  g.fillStyle = '#2a2e35'; g.fillRect(x - w / 2, y - h, w, h * 0.96);
   g.fillStyle = '#20242a'; g.fillRect(x - w / 2, y - h, w, h * 0.08);
   // rear window, a little red from the signal
   g.fillStyle = ringing() ? (flash ? '#3a2226' : '#2e2228') : '#1e232c';
@@ -306,13 +378,20 @@ function drawVan(x, y, h, flash) {
   g.fillStyle = `rgba(210,40,30,${tl})`;
   g.fillRect(x - w / 2 + w * 0.03, y - h * 0.45, w * 0.06, h * 0.16);
   g.fillRect(x + w / 2 - w * 0.09, y - h * 0.45, w * 0.06, h * 0.16);
-  // plate
-  g.fillStyle = '#c9c4b4'; g.fillRect(x - w * 0.12, y - h * 0.25, w * 0.24, h * 0.07);
-  // exhaust, low on the left
-  const ex = x - w * 0.3, ey = y - h * 0.04;
-  for (const p of puffs) {
-    g.fillStyle = `rgba(160,164,172,${p.a})`;
-    g.beginPath(); g.arc(ex + p.x, ey + p.y, h * 0.02 * p.r, 0, Math.PI * 2); g.fill();
+  // bumper, step, and the plate above it, lit by the small lamp in the bumper
+  g.fillStyle = '#1a1d22'; g.fillRect(x - w * 0.52, y - h * 0.13, w * 1.04, h * 0.1);
+  g.fillStyle = '#24282e'; g.fillRect(x - w * 0.52, y - h * 0.13, w * 1.04, Math.max(1, h * 0.012));
+  g.fillStyle = '#c9c4b4'; g.fillRect(x - w * 0.12, y - h * 0.24, w * 0.24, h * 0.07);
+  g.fillStyle = '#2a2d33'; g.font = `${Math.round(h * 0.045)}px system-ui, sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('ZM26 RKD', x, y - h * 0.205);
+  // exhaust, from under the bumper on the left; it drifts back toward us and spreads low
+  const ex = x - w * 0.3, ey = y - h * 0.03;
+  for (const p of puffs) {   // soft-edged, thin: breath in cold air, not smoke
+    const r = h * 0.02 * p.r, px2 = ex + p.x, py2 = ey + p.y;
+    const pg = g.createRadialGradient(px2, py2, 0, px2, py2, r);
+    pg.addColorStop(0, `rgba(150,154,162,${p.a * 0.45})`); pg.addColorStop(1, 'rgba(150,154,162,0)');
+    g.fillStyle = pg; g.beginPath(); g.arc(px2, py2, r, 0, Math.PI * 2); g.fill();
   }
 }
 
@@ -331,7 +410,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // for headless checks
-window.__crossing = { get state() { return state; }, get arm() { return arm; }, step, trains: () => trains };
+window.__crossing = { get state() { return state; }, get arm() { return arm; }, step, trains: () => trains, geom: () => geom };
 </script>
 </body>
 </html>

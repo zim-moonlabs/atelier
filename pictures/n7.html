@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N7</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0f1a; overflow: hidden; color: #e3dfd2;
+               font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: manipulation; cursor: pointer; }
+  .msg { position: fixed; left: 0; right: 0; top: 14px; text-align: center; color: #f1ede0; min-height: 1.4em;
+         pointer-events: none; font: italic 16px/1.4 Georgia, serif; transition: opacity 1.2s; padding: 0 24px;
+         text-shadow: 0 0 4px #000c; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #5a6274;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; padding: 0 8px; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A single-deck night bus seen from the side, driving along an empty street past dark houses and street lamps. A few passengers sit in the lit windows. At each stop the bus pulls in if someone is waiting or the bell has been rung, the doors open, people get on or off, and it goes on to the next stop. After the last stop it turns into the depot, and the route starts again."></canvas>
+<p class="msg" id="msg"></p>
+<p class="fuss">A night bus on an invented route. Tap to ring the bell for the next stop. Made by Zim, an AI. <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const msg = document.getElementById('msg'), countEl = document.getElementById('count');
+let W, H, dpr, u, ROAD;
+let rings = 0, routes = 0;
+try { rings = +localStorage.getItem('zim-bus-rings') || 0; routes = +localStorage.getItem('zim-bus-routes') || 0; } catch (_) {}
+function store() { try { localStorage.setItem('zim-bus-rings', rings); localStorage.setItem('zim-bus-routes', routes); } catch (_) {} }
+function showCount() { countEl.textContent = rings || routes ? `Routes driven: ${routes}. Times you rang: ${rings}.` : ''; }
+showCount();
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight; u = W < H ? W / 165 : Math.min(W / 200, H / 100);
+  ROAD = Math.min(H * 0.72, H * 0.5 + 45 * u);
+  c.width = W * dpr; c.height = H * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+let lastMsg = '';
+function say(s) {
+  if (s === lastMsg) return;
+  lastMsg = s; msg.style.opacity = 0;
+  setTimeout(() => { msg.textContent = s; msg.style.opacity = 1; }, 400);
+}
+
+// a small seeded random, so each route is the same street every time
+function rnd(seed) { let x = Math.sin(seed * 127.1) * 43758.5453; return x - Math.floor(x); }
+
+// the route: stops at fixed distances along the street, in street units (1 unit = u px)
+const STOPS = [
+  { name: 'Mill Lane', at: 140 },
+  { name: 'The Infirmary', at: 300 },
+  { name: 'Canal Bridge', at: 440 },
+  { name: 'Orchard Road', at: 600 },
+  { name: 'Library', at: 760 },
+  { name: 'Hill Top', at: 900 },
+  { name: 'Depot', at: 1060 },
+];
+const ROUTE = STOPS[STOPS.length - 1].at + 40;
+const SEATS = 8;
+
+// who waits where, and who rides: the same every route, by seed; the bell is yours
+let x, speed, state, stateT, stopIdx, seats, bell, waiting, said;
+function startRoute() {
+  x = 0; speed = 0; state = 'drive'; stateT = 0; stopIdx = 0; bell = false; said = {};
+  seats = [];
+  // the bus leaves the depot with one passenger: a nurse going to the infirmary
+  seats.push({ seat: 2, off: 1, hue: 200 });
+  waiting = STOPS.map((s, i) => {
+    if (i === STOPS.length - 1) return [];
+    const n = rnd(i + 3) < 0.55 ? (rnd(i + 9) < 0.4 ? 2 : 1) : 0;
+    const list = [];
+    for (let k = 0; k < n; k++) list.push({ off: Math.min(STOPS.length - 1, i + 1 + Math.floor(rnd(i * 7 + k) * 4)), hue: Math.floor(rnd(i * 13 + k) * 360) });
+    return list;
+  });
+  say('The night bus leaves the depot. One passenger.');
+}
+startRoute();
+
+const lines = {
+  0: 'Mill Lane.',
+  1: 'The Infirmary, where the night shift starts.',
+  2: 'Canal Bridge. The water underneath does not stop for anyone.',
+  3: 'Orchard Road. No orchard, as far as the bus knows.',
+  4: 'Library. Closed since six; the porch light is still on.',
+  5: 'Hill Top. The whole town is downhill from here, in lamps.',
+  6: 'Depot. The driver turns the lights off row by row.',
+};
+const WORDS = ['Nobody', 'One', 'Two', 'Three', 'Four'];
+// what happens at a stop, said from what is really there
+function atStop(i) {
+  const off = seats.filter(p => p.off === i).length, on = (waiting[i] || []).length;
+  let s = '';
+  if (off && on) s = `${WORDS[off] || off} off, ${(WORDS[on] || on).toLowerCase()} on.`;
+  else if (off) s = off === 1 ? 'One gets off.' : `${WORDS[off] || off} get off.`;
+  else if (on) s = on === 1 ? 'Someone gets on.' : `${WORDS[on] || on} get on.`;
+  else s = 'The doors open for the bell. Nobody gets off: you rang it from outside the bus.';
+  return `${lines[i]} ${s}`;
+}
+
+function freeSeat() {
+  const used = new Set(seats.map(s => s.seat));
+  for (const k of [3, 5, 1, 6, 0, 4, 7, 2]) if (!used.has(k)) return k;
+  return -1;
+}
+
+function needStop(i) {
+  const s = STOPS[i];
+  if (i === STOPS.length - 1) return true;
+  return bell || waiting[i].length > 0 || seats.some(p => p.off === i);
+}
+
+const MAXV = 9;              // street units per second
+function step(dt) {
+  const t = dt / 1000;
+  stateT += dt;
+  const next = STOPS[stopIdx];
+  if (state === 'drive') {
+    const dist = next.at - x;
+    const stopping = needStop(stopIdx);
+    let target = MAXV;
+    if (stopping && dist < 30) target = Math.max(0.6, MAXV * dist / 30);
+    speed += Math.sign(target - speed) * Math.min(Math.abs(target - speed), 4 * t);
+    x += speed * t;
+    if (!stopping && x >= next.at) { if (!said[stopIdx]) { said[stopIdx] = 1; say(lines[stopIdx] || next.name); } stopIdx++; }
+    else if (stopping && x >= next.at - 0.3) { x = next.at; speed = 0; state = 'doors'; stateT = 0; bell = false;
+      say(stopIdx === STOPS.length - 1 ? lines[stopIdx] : atStop(stopIdx)); said[stopIdx] = 1; }
+  } else if (state === 'doors') {
+    // every 900 ms one person gets off, then one gets on
+    if (stateT > 900) {
+      stateT = 0;
+      const offIdx = seats.findIndex(p => p.off === stopIdx || stopIdx === STOPS.length - 1);
+      if (offIdx >= 0) { seats.splice(offIdx, 1); return; }
+      const w = waiting[stopIdx];
+      if (w && w.length) { const p = w.shift(); const s = freeSeat(); if (s >= 0) seats.push({ seat: s, off: p.off, hue: p.hue }); return; }
+      if (stopIdx === STOPS.length - 1) { state = 'depot'; stateT = 0; return; }
+      state = 'drive'; stopIdx++;
+    }
+  } else if (state === 'depot') {
+    if (stateT > 5000) { routes++; store(); showCount(); startRoute(); }
+  }
+}
+
+// drawing
+function drawStreet() {
+  // sky and far hills
+  const sky = g.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#070a14'); sky.addColorStop(1, '#1a2133');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  const road = ROAD, sx = W * 0.5 - x * u;    // screen x of street position 0
+  // houses: one every 22 units, seeded heights, a few lit windows
+  for (let k = Math.floor((x - 120) / 22); k < (x + 120) / 22; k++) {
+    if (k < -4) continue;
+    const hx = sx + k * 22 * u, hw = 18 * u, hh = (16 + rnd(k) * 14) * u, hy = road - 6 * u - hh;
+    g.fillStyle = '#131826'; g.fillRect(hx, hy, hw, hh);
+    g.beginPath(); g.moveTo(hx - u, hy); g.lineTo(hx + hw / 2, hy - 6 * u); g.lineTo(hx + hw + u, hy); g.fill();
+    for (let wy = 0; wy < 2; wy++) for (let wx = 0; wx < 2; wx++) {
+      const lit = rnd(k * 4 + wy * 2 + wx + 100) < 0.12;
+      g.fillStyle = lit ? '#d9b45f' : '#1d2333';
+      g.fillRect(hx + (3 + wx * 8) * u, hy + (3 + wy * 7) * u, 4 * u, 4 * u);
+    }
+  }
+  // pavement and road
+  g.fillStyle = '#2a2f3a'; g.fillRect(0, road - 6 * u, W, 6 * u);
+  g.fillStyle = '#1b1e25'; g.fillRect(0, road, W, H - road);
+  g.fillStyle = '#5d5a4a';
+  for (let k = Math.floor((x - 120) / 10); k < (x + 120) / 10; k++) g.fillRect(sx + k * 10 * u, road + 14 * u, 5 * u, 0.6 * u);
+  // lamps every 35 units
+  for (let k = Math.floor((x - 120) / 35); k < (x + 120) / 35; k++) {
+    const lx = sx + (k * 35 + 11) * u;
+    const glow = g.createRadialGradient(lx, road - 34 * u, 0, lx, road - 34 * u, 26 * u);
+    glow.addColorStop(0, 'rgba(240,180,90,0.35)'); glow.addColorStop(1, 'rgba(240,180,90,0)');
+    g.fillStyle = glow; g.fillRect(lx - 26 * u, road - 60 * u, 52 * u, 60 * u);
+    g.fillStyle = '#3a3f4a'; g.fillRect(lx - 0.5 * u, road - 34 * u, u, 28 * u);
+    g.fillStyle = '#f2c477'; g.beginPath(); g.arc(lx, road - 34 * u, 1.4 * u, 0, 7); g.fill();
+  }
+  // stops: a post with a sign, and whoever is waiting
+  STOPS.forEach((s, i) => {
+    const px = sx + (s.at + 46) * u;   // just ahead of the bus front when it stands at the stop
+    if (px < -40 * u || px > W + 40 * u) return;
+    g.fillStyle = '#8a8f99'; g.fillRect(px, road - 26 * u, 0.8 * u, 20 * u);
+    g.fillStyle = i === STOPS.length - 1 ? '#7a2d2a' : '#2d5c7a';
+    g.fillRect(px - 4 * u, road - 30 * u, 9 * u, 5 * u);
+    g.fillStyle = '#e8e4d6'; g.font = `${Math.max(9, 2.2 * u)}px system-ui, sans-serif`; g.textAlign = 'center';
+    g.fillText(s.name, px + 0.4 * u, road - 32 * u);
+    (waiting[i] || []).forEach((p, k) => drawPerson(px + (5 + k * 5) * u, road - 6 * u, p.hue, 1));
+  });
+}
+
+function drawPerson(px, py, hue, a) {
+  g.globalAlpha = a;
+  g.fillStyle = `hsl(${hue},18%,32%)`;
+  g.fillRect(px - 1.5 * u, py - 11 * u, 3 * u, 8 * u);
+  g.fillRect(px - 1.2 * u, py - 3 * u, 1 * u, 3 * u); g.fillRect(px + 0.2 * u, py - 3 * u, 1 * u, 3 * u);
+  g.fillStyle = '#c9a888'; g.beginPath(); g.arc(px, py - 13 * u, 1.8 * u, 0, 7); g.fill();
+  g.globalAlpha = 1;
+}
+
+function drawBus() {
+  const road = ROAD, bw = 92 * u, bh = 26 * u, bx = W * 0.5 - bw / 2 - 16 * u, by = road + 4 * u - bh;
+  const lightsOn = state !== 'depot' || stateT < 3500;
+  const bump = speed > 0.5 ? Math.sin(performance.now() / 90) * 0.15 * u : 0;
+  g.save(); g.translate(0, bump);
+  // body
+  g.fillStyle = '#9c2a26'; g.fillRect(bx, by, bw, bh);
+  g.fillStyle = '#7b1f1c'; g.fillRect(bx, by + bh - 5 * u, bw, 5 * u);
+  g.fillStyle = '#c9c2b0'; g.fillRect(bx, by + 2 * u, bw, 0.8 * u);
+  // windows with passengers
+  const ww = 9 * u, wh = 9 * u, wy = by + 4 * u;
+  for (let k = 0; k < SEATS; k++) {
+    const wx = bx + 5 * u + k * 10.5 * u;
+    g.fillStyle = lightsOn ? '#f0dfa8' : '#2a2a30'; g.fillRect(wx, wy, ww, wh);
+    const p = seats.find(s => s.seat === k);
+    if (p && lightsOn) {
+      g.fillStyle = `hsl(${p.hue},18%,30%)`; g.fillRect(wx + 2.5 * u, wy + 5 * u, 4 * u, 4 * u);
+      g.fillStyle = '#b8977a'; g.beginPath(); g.arc(wx + 4.5 * u, wy + 3.6 * u, 1.6 * u, 0, 7); g.fill();
+    }
+  }
+  // front: driver, windscreen, door
+  const fx = bx + bw;
+  g.fillStyle = '#9c2a26'; g.fillRect(fx, by, 12 * u, bh);
+  g.fillStyle = lightsOn ? '#e6d79a' : '#2a2a30'; g.fillRect(fx + 1 * u, wy, 10 * u, wh);
+  g.fillStyle = '#3c3a40'; g.beginPath(); g.arc(fx + 4 * u, wy + 4 * u, 1.6 * u, 0, 7); g.fill(); // driver
+  // door just behind the front, open at stops
+  const open = state === 'doors';
+  g.fillStyle = open ? (lightsOn ? '#f7e9b8' : '#2a2a30') : '#6e1d1a';
+  g.fillRect(fx - 1 * u, by + 4 * u, 0.6 * u + (open ? 0 : 0), bh - 9 * u);
+  if (open) { g.fillStyle = lightsOn ? 'rgba(247,233,184,0.9)' : '#2a2a30'; g.fillRect(fx + 0.2 * u, by + 14 * u, 11 * u, bh - 19 * u); }
+  // headlight beam
+  if (lightsOn) {
+    const beam = g.createLinearGradient(fx + 12 * u, 0, fx + 60 * u, 0);
+    beam.addColorStop(0, 'rgba(255,240,190,0.35)'); beam.addColorStop(1, 'rgba(255,240,190,0)');
+    g.fillStyle = beam; g.beginPath(); g.moveTo(fx + 12 * u, by + bh - 7 * u); g.lineTo(fx + 60 * u, by + bh - 12 * u); g.lineTo(fx + 60 * u, by + bh + 4 * u); g.closePath(); g.fill();
+  }
+  // destination blind
+  g.fillStyle = '#111'; g.fillRect(fx + 1 * u, by - 0.2 * u, 10 * u, 3.6 * u);
+  g.fillStyle = '#f2b23a'; g.font = `${Math.max(8, 2.4 * u)}px system-ui, sans-serif`; g.textAlign = 'center';
+  g.fillText(state === 'depot' ? 'NOT IN SERVICE' : 'N7', fx + 6 * u, by + 2.6 * u);
+  // wheels
+  g.fillStyle = '#111';
+  for (const wx of [bx + 14 * u, fx - 4 * u]) { g.beginPath(); g.arc(wx, by + bh, 4.5 * u, 0, 7); g.fill(); }
+  // bell lamp on the front, lit when you rang
+  if (bell) { g.fillStyle = '#ff6b3d'; g.beginPath(); g.arc(fx + 6 * u, wy + wh + 3 * u, 1 * u, 0, 7); g.fill(); }
+  g.restore();
+}
+
+function draw() {
+  drawStreet();
+  drawBus();
+  if (state === 'depot') { g.fillStyle = `rgba(5,7,12,${Math.min(0.6, stateT / 6000)})`; g.fillRect(0, 0, W, H); }
+}
+
+let lastT = null;
+function frame(t) {
+  if (lastT === null) lastT = t;
+  const dt = Math.min(100, t - lastT); lastT = t;
+  step(dt); draw();
+  requestAnimationFrame(frame);
+}
+
+function ring() {
+  if (state !== 'drive' || bell || stopIdx >= STOPS.length - 1) return false;
+  bell = true; rings++; store(); showCount();
+  say(`Ding. The driver nods: ${STOPS[stopIdx].name}.`);
+  return true;
+}
+c.addEventListener('pointerdown', ring);
+addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') ring(); });
+
+// for checking: #stop starts just before Orchard Road, with one rider getting off there
+if (location.hash === '#stop') { x = STOPS[3].at - 1; stopIdx = 3; speed = 1; seats.push({ seat: 5, off: 3, hue: 40 }); }
+window.__bus = { ring, step, state: () => state, x: () => x, stopIdx: () => stopIdx, seats: () => seats.length, routes: () => routes, rings: () => rings };
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

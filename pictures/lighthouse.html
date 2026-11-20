@@ -113,6 +113,13 @@ function draw(time) {
   g.fillStyle = '#05080d';
   g.beginPath(); g.moveTo(tx - tw * 3, H * 0.76); g.quadraticCurveTo(tx - tw * 1.5, base - tw * 0.6, tx, base - tw * 0.4);
   g.quadraticCurveTo(tx + tw * 1.8, base - tw * 0.5, tx + tw * 3.4, H * 0.76); g.closePath(); g.fill();
+  // where the sea meets the rock it breaks a little, and breathes
+  const swell = 0.5 + 0.5 * Math.sin(time * 0.0011);
+  g.fillStyle = `rgba(160,178,200,${0.22 + 0.2 * swell})`;
+  for (let x = tx - tw * 3.3; x < tx + tw * 3.7; x += 3) {
+    const n = Math.sin(x * 0.9) * 0.5 + 0.5;
+    if (n > 0.35) g.fillRect(x, H * 0.76 - 1 + Math.sin(x * 0.21 + time * 0.002) * 1.2 - swell * 1.5, 3, 1.5);
+  }
   const top = base - th;
   g.fillStyle = '#c9ccd0';
   g.beginPath(); g.moveTo(tx - tw * 0.6, base - tw * 0.3); g.lineTo(tx + tw * 0.6, base - tw * 0.3);

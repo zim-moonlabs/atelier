@@ -55,7 +55,9 @@ function profile(depths) {
     }
     out[i] = Math.max(0, Math.min(1, best));
   }
-  for (let i = 0; i < N * 0.06; i++) out[i] = 0; // shoulder stays whole
+  // the shoulder stays whole, and the first cut slopes down from it like the others (no wall).
+  // It ends at 4%: there even the deepest first cut's own V has come up to the top, so its flat is untouched.
+  for (let i = 0; i < N; i++) out[i] = Math.min(out[i], Math.max(0, (i - N * 0.04) * 0.06));
   return out;
 }
 let targetProfile;
@@ -200,7 +202,8 @@ c.addEventListener('pointermove', e => {
 });
 const up = () => { down = false; };
 c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
-c.addEventListener('pointerleave', () => { if (!down) ptr = null; });
+// a mouse that leaves takes the wheel away; a lifted finger leaves it where it was
+c.addEventListener('pointerleave', e => { if (!down && e.pointerType === 'mouse') ptr = null; });
 
 // keyboard: arrows move the wheel, holding space cuts
 const held = {};
@@ -234,6 +237,7 @@ function frame() {
 }
 addEventListener('resize', resize);
 resize(); newOldKey(); targetProfile = profile(target); showCount();
+ptr = { x: K.x0 + K.len * 0.5, y: K.yNew - 8 }; // the wheel waits just above the blank
 requestAnimationFrame(frame);
 </script>
 </body>

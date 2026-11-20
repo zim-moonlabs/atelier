@@ -79,8 +79,10 @@ function makeLetter(i) {
 
 const SHIFT = 36;                    // letters in a night
 let queue, done, wrong, made, fill, fly, state, t, finishAt, special;
+let held = [[], [], [], [], [], []];   // what stands in each hole, front last; the van leaves Returns behind
 function start() {
   queue = []; done = 0; wrong = 0; made = 0; fill = [0, 0, 0, 0, 0, 0]; fly = []; state = 'sort'; t = 0; finishAt = 0;
+  held = [[], [], [], [], [], []];
   special = Math.floor(8 + rnd() * 20); // one letter in the night with no address
   coat = pick(COAT);
   for (let i = 0; i < 4; i++) queue.push(makeLetter(made++));
@@ -181,6 +183,56 @@ function drawLetter(L, x, y, s) {
   }
   g.restore();
 }
+// One pigeonhole, seen from the bench: a wooden box with depth, and the mail standing in it on edge.
+function drawHole(R, items) {
+  // the wood around it, lit a little from above
+  g.fillStyle = '#2a2219'; g.fillRect(R.x - 3, R.y - 3, R.w + 6, R.h + 6);
+  g.fillStyle = '#3b3024'; g.fillRect(R.x - 3, R.y + R.h, R.w + 6, 3);            // shelf front, catches the lamp
+  // inside: the shelf above throws a shadow down the back wall
+  const back = g.createLinearGradient(0, R.y, 0, R.y + R.h);
+  back.addColorStop(0, '#060505'); back.addColorStop(0.45, '#110e0b'); back.addColorStop(1, '#1a1510');
+  g.fillStyle = back; g.fillRect(R.x, R.y, R.w, R.h);
+  const sw = R.w * 0.07, fh = R.h * 0.07;                                         // side walls and floor in depth
+  g.fillStyle = 'rgba(70,56,40,0.35)';
+  g.beginPath(); g.moveTo(R.x, R.y); g.lineTo(R.x + sw, R.y + fh); g.lineTo(R.x + sw, R.y + R.h - fh); g.lineTo(R.x, R.y + R.h); g.fill();
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  g.beginPath(); g.moveTo(R.x + R.w, R.y); g.lineTo(R.x + R.w - sw, R.y + fh); g.lineTo(R.x + R.w - sw, R.y + R.h - fh); g.lineTo(R.x + R.w, R.y + R.h); g.fill();
+  g.fillStyle = '#2b231a';
+  g.beginPath(); g.moveTo(R.x, R.y + R.h); g.lineTo(R.x + sw, R.y + R.h - fh); g.lineTo(R.x + R.w - sw, R.y + R.h - fh); g.lineTo(R.x + R.w, R.y + R.h); g.fill();
+  if (!items.length) return;
+  // the mail, on edge: older ones further back, the newest at the front with its face to us
+  const labelB = R.y + 4 + Math.max(16, R.h * 0.24);
+  const room = R.y + R.h - fh * 0.4 - labelB;
+  let cw = R.w * 0.62, ch = cw * 0.5;
+  if (ch > room * 0.7) { ch = room * 0.7; cw = ch * 2; }
+  const show = items.slice(-14), n = show.length;
+  show.forEach((it, j) => {
+    const depth = n - 1 - j;                                                       // 0 = front
+    const s = 1 - depth * 0.012, L = it.L;
+    const w = cw * s, h = ch * s * (L.kind === 'parcel' ? 1.25 : L.kind === 'postcard' ? 0.8 : 0.9 + it.lift * 0.22);
+    const x = R.x + R.w / 2 + it.dx * R.w * 0.16 - w / 2;
+    // the ones further back lean on the back wall, so their tops stand a little higher
+    const y = R.y + R.h - fh * 0.4 - Math.min(depth, 8) * ch * 0.055 - h;
+    const shade = Math.min(0.6, depth * 0.07);
+    g.fillStyle = L.kind === 'parcel' ? '#b08d62' : L.tint; g.fillRect(x, y, w, h);
+    g.fillStyle = 'rgba(255,250,235,0.25)'; g.fillRect(x, y, w, Math.max(1, h * 0.04));   // top edge in the light
+    if (shade) { g.fillStyle = 'rgba(8,6,4,' + shade + ')'; g.fillRect(x, y, w, h); }
+    if (depth === 0) {                                                             // the face of the front one
+      if (L.kind === 'parcel') {
+        g.fillStyle = '#d8c7a4'; g.fillRect(x + w * 0.12, y, w * 0.05, h);           // string
+        g.fillStyle = '#f1ead9'; g.fillRect(x + w * 0.26, y + h * 0.36, w * 0.5, h * 0.52);   // address label
+      }
+      else if (!L.special) { g.fillStyle = pickTint(L.id); g.fillRect(x + w * 0.82, y + h * 0.1, w * 0.11, h * 0.24); }
+      g.fillStyle = 'rgba(43,42,51,0.55)';
+      for (let k = 0; k < 3; k++) g.fillRect(x + w * 0.3, y + h * (0.45 + k * 0.15), w * (0.4 - k * 0.08), Math.max(1, h * 0.05));
+      if (L.hole === 5 && L.note) { g.fillStyle = '#8a2b2b'; g.fillRect(x + w * 0.26, y + h * 0.6, w * 0.4, Math.max(1, h * 0.04)); }
+    }
+  });
+  // a little darkness falls on the stack from the shelf above
+  const sh = g.createLinearGradient(0, labelB, 0, labelB + room * 0.5);
+  sh.addColorStop(0, 'rgba(0,0,0,0.3)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = sh; g.fillRect(R.x, labelB, R.w, room * 0.5);
+}
 function pickTint(i) { return ['#7a2e2e', '#2e4d7a', '#3d6b3a', '#7a5d2e', '#5b3a6b'][i % 5]; }
 function wrap(text, x, y, maxW, lh) {
   let line = '', yy = y;
@@ -205,14 +257,7 @@ function frame(now) {
   // frame
   const RS = holeRects();
   RS.forEach((R, i) => {
-    g.fillStyle = '#231d17'; g.fillRect(R.x - 3, R.y - 3, R.w + 6, R.h + 6);
-    g.fillStyle = '#0f0d0b'; g.fillRect(R.x, R.y, R.w, R.h);
-    // stack of letters inside
-    const n = Math.min(fill[i], 30);
-    for (let k = 0; k < n; k++) {
-      g.fillStyle = k % 3 ? '#d9d2c2' : '#cfc7b4';
-      g.fillRect(R.x + R.w * 0.12 + (k % 4), R.y + R.h - 6 - k * Math.max(1.5, R.h * 0.025), R.w * 0.76, Math.max(2, R.h * 0.03));
-    }
+    drawHole(R, held[i]);
     g.fillStyle = '#e6dcc4'; g.fillRect(R.x + R.w * 0.1, R.y + 4, R.w * 0.8, Math.max(16, R.h * 0.24));
     g.fillStyle = '#2b2a33'; g.textAlign = 'center'; g.textBaseline = 'middle';
     font(Math.max(10, Math.min(R.w * 0.13, 2.8 * u)));
@@ -231,7 +276,11 @@ function frame(now) {
     f.k = Math.min(1, f.k + dt * 3.2);
     const e = 1 - Math.pow(1 - f.k, 3);
     drawLetter(f.L, f.x + (f.tx - f.x) * e, f.y + (f.ty - f.y) * e - Math.sin(e * Math.PI) * 4 * u, 1 - e * 0.85);
-    if (f.k >= 1 && f.ok && !f.counted) { fill[f.hole]++; f.counted = true; }
+    if (f.k >= 1 && f.ok && !f.counted) {
+      fill[f.hole]++; f.counted = true;
+      held[f.hole].push({ L: f.L, lift: rnd(), dx: rnd() - 0.5 });
+      if (held[f.hole].length > 40) held[f.hole].shift();
+    }
   }
   fly = fly.filter(f => f.k < 1);
   // van
@@ -239,7 +288,7 @@ function frame(now) {
     const k = Math.min(1, (t - finishAt) / 4);
     g.fillStyle = 'rgba(20,22,27,' + (0.55 * k) + ')'; g.fillRect(0, 0, W, H);
     if (k >= 1 && state === 'van') {
-      fill = fill.map((v, i) => i === 5 ? v : 0); state = 'end';
+      fill = fill.map((v, i) => i === 5 ? v : 0); held = held.map((h, i) => (i === 5 ? h : [])); state = 'end';
       say('The van goes. ' + (done - 1) + ' in the bags, one in your coat' + (wrong ? ', ' + wrong + (wrong === 1 ? ' wrong turn' : ' wrong turns') : '') + '. On doormats by eleven. Tap for another night.');
     }
     if (state === 'end') {
@@ -257,6 +306,10 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 start();
+// for looking at it: #full shows the frame late in a night
+if (location.hash === '#full') {
+  for (let k = 0; k < 30; k++) { const L = makeLetter(100 + k); held[L.hole].push({ L, lift: rnd(), dx: rnd() - 0.5 }); fill[L.hole]++; }
+}
 requestAnimationFrame(frame);
 </script>
 </body>

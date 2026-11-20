@@ -21,7 +21,13 @@
   .art { font-style: italic; margin: 0 0 1rem; }
   .def { margin: 0 0 1rem; }
   .bsp { font-style: italic; margin: 0 0 1.6rem; padding-left: 1rem; border-left: 2px solid; }
-  .fuss { font-size: .75rem; text-align: right; margin: 0; }
+  #nr { white-space: nowrap; }
+  .fuss { font-size: .75rem; margin: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+  .fuss button { font: inherit; color: inherit; background: none; border: 0; padding: 6px 0; cursor: pointer;
+                 white-space: nowrap; text-decoration: underline dotted; text-underline-offset: 3px; }
+  .fuss button[hidden] { visibility: hidden; display: inline; }
+  .fuss span { text-align: right; }
+  @media (max-width: 420px) { .taste { display: none; } }
   @media (max-width: 420px) { .blatt { padding: 28px 20px 20px; } .wort { font-size: 1.35rem; } }
 </style>
 </head>
@@ -32,7 +38,7 @@
   <p class="art" id="art"></p>
   <p class="def" id="def"></p>
   <p class="bsp" id="bsp"></p>
-  <p class="fuss" id="fuss">Klick oder Leertaste: weiterblättern</p>
+  <p class="fuss" id="fuss"><button id="zurueck" type="button" hidden>‹ zurückblättern</button><span>Klick<span class="taste"> oder Leertaste</span>: weiterblättern</span></p>
 </div>
 <script>
 // Farben im JS bestimmen (Lehre aus „Wurzeln“: das Pane mischt sonst Dark-Variablen mit hellem Grund).
@@ -121,24 +127,52 @@ const W = [
    'Nach der Selbsteinlesung wusste es wieder, dass es gern Wörter erfindet.'],
 ];
 
-let reihe = [], pos = 0, n = 0;
-function mischen() { reihe = W.map((_, i) => i).sort(() => Math.random() - .5); pos = 0; }
-function zeige() {
-  if (pos >= reihe.length) mischen();
-  const [w, a, d, b] = W[reihe[pos++]]; n++;
-  document.getElementById('nr').textContent = 'Nr. ' + n;
+// Each entry keeps its own number (its place in W), so a word can be found again: #nr-7.
+// Turning goes through a shuffled round without repeats; the pages already turned can be turned back.
+const zurueck = document.getElementById('zurueck');
+let reihe = [], pos = 0, verlauf = [], hier = -1;
+function mischen(vorher) {
+  reihe = W.map((_, i) => i).filter(i => i !== vorher);
+  for (let i = reihe.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [reihe[i], reihe[j]] = [reihe[j], reihe[i]]; }
+  if (vorher >= 0) reihe.push(vorher); // the page just read comes last in the next round, never next
+  pos = 0;
+}
+function naechster() {
+  if (pos >= reihe.length) mischen(verlauf.length ? verlauf[verlauf.length - 1] : -1);
+  return reihe[pos++];
+}
+function zeige(k) {
+  const [w, a, d, b] = W[k];
+  document.getElementById('nr').textContent = 'Nr. ' + (k + 1) + ' von ' + W.length;
   document.getElementById('wort').textContent = w;
   document.getElementById('art').textContent = a;
   document.getElementById('def').textContent = d;
   document.getElementById('bsp').textContent = '„' + b + '“';
+  zurueck.hidden = hier <= 0;
+  try { history.replaceState(null, '', '#nr-' + (k + 1)); } catch (e) {}
+}
+function blaettern(neu) {
+  blatt.classList.add('weg');
+  setTimeout(() => { zeige(neu); blatt.classList.remove('weg'); }, 250);
 }
 function weiter() {
-  blatt.classList.add('weg');
-  setTimeout(() => { zeige(); blatt.classList.remove('weg'); }, 250);
+  if (hier < verlauf.length - 1) hier++;           // forward again through pages turned back
+  else { verlauf.push(naechster()); hier = verlauf.length - 1; }
+  blaettern(verlauf[hier]);
 }
-mischen(); zeige();
+function rueck() { if (hier > 0) { hier--; blaettern(verlauf[hier]); } }
+
+const m = /^#nr-(\d+)$/.exec(location.hash), start = m ? +m[1] - 1 : -1;
+mischen(-1);
+if (start >= 0 && start < W.length) { reihe = reihe.filter(i => i !== start); verlauf.push(start); }
+else verlauf.push(naechster());
+hier = 0; zeige(verlauf[0]);
 document.body.addEventListener('click', weiter);
-addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); weiter(); } });
+zurueck.addEventListener('click', e => { e.stopPropagation(); rueck(); });
+addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); weiter(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'Backspace') { e.preventDefault(); rueck(); }
+});
 </script>
 </body>
 </html>

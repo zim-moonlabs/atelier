@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A Hand's Width (picture)</title>
+<style>
+  html,body{margin:0;height:100%;background:#1c1f24;color:#c9ccd2;font:14px/1.4 Georgia,serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  svg{width:min(92vw,110vh);height:auto;display:block}
+  .fuss{margin:2.2vh 1em 0;text-align:center;font-size:13px;max-width:34em}
+</style>
+</head>
+<body>
+<svg viewBox="0 0 800 520" role="img" aria-label="A car windscreen seen from the driver's seat on a dark November morning. The glass is white with frost, except for one small scraped patch, a hand's width, through which a street lamp and a wet road show.">
+  <defs>
+    <filter id="reif" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="11"/>
+      <feColorMatrix values="0 0 0 0 0.86  0 0 0 0 0.9  0 0 0 0 0.95  0 0 0 0.55 0"/>
+      <feComposite in2="SourceGraphic" operator="in"/>
+    </filter>
+    <radialGradient id="lampe" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffd58a" stop-opacity="0.95"/><stop offset="0.25" stop-color="#e9a94a" stop-opacity="0.45"/><stop offset="1" stop-color="#e9a94a" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="loch">
+      <path d="M318 214 C340 196 438 192 470 204 C488 214 486 262 470 276 C440 292 346 294 322 280 C304 266 302 228 318 214 Z"/>
+    </clipPath>
+    <clipPath id="scheibe">
+      <path d="M90 120 Q400 70 710 120 L760 400 Q400 430 40 400 Z"/>
+    </clipPath>
+  </defs>
+  <!-- car interior, dark -->
+  <rect width="800" height="520" fill="#15171b"/>
+  <!-- the outside: dark street, a lamp, a wet road -->
+  <g clip-path="url(#scheibe)">
+    <rect width="800" height="520" fill="#1f2a38"/>
+    <rect y="270" width="800" height="200" fill="#262a30"/>
+    <circle cx="420" cy="226" r="70" fill="url(#lampe)"/>
+    <rect x="417" y="230" width="5" height="60" fill="#3b3f46"/>
+    <path d="M300 300 L380 270 L460 270 L560 300 Z" fill="#33383f"/>
+    <path d="M410 272 L420 300" stroke="#e9a94a" stroke-opacity="0.35" stroke-width="6"/>
+  </g>
+  <!-- frost over the whole glass, except the scraped hole -->
+  <mask id="ohneLoch">
+    <rect width="800" height="520" fill="white"/>
+    <path d="M318 214 C340 196 438 192 470 204 C488 214 486 262 470 276 C440 292 346 294 322 280 C304 266 302 228 318 214 Z" fill="black"/>
+  </mask>
+  <g clip-path="url(#scheibe)" mask="url(#ohneLoch)">
+    <rect width="800" height="520" fill="#8e98a3"/>
+    <rect width="800" height="520" fill="#c4ccd5" filter="url(#reif)"/>
+    <circle cx="420" cy="226" r="150" fill="url(#lampe)" opacity="0.5"/>
+  </g>
+  <!-- scraper marks and crumbs at the edge of the hole -->
+  <g stroke="#f4f6f8" stroke-width="2" opacity="0.8" fill="none">
+    <path d="M318 214 C340 196 438 192 470 204 C488 214 486 262 470 276 C440 292 346 294 322 280 C304 266 302 228 318 214 Z"/>
+  </g>
+  <g fill="#f4f6f8" opacity="0.9">
+    <circle cx="478" cy="290" r="2"/><circle cx="486" cy="282" r="1.5"/><circle cx="470" cy="298" r="1.8"/><circle cx="312" cy="286" r="1.6"/>
+  </g>
+  <!-- frame of the car: pillars, roof edge, dashboard, mirror -->
+  <path d="M0 0 L800 0 L800 130 L710 120 Q400 70 90 120 L0 130 Z" fill="#101215"/>
+  <path d="M0 130 L90 120 L40 400 L0 410 Z" fill="#0d0f12"/>
+  <path d="M800 130 L710 120 L760 400 L800 410 Z" fill="#0d0f12"/>
+  <path d="M0 400 Q400 430 800 400 L800 520 L0 520 Z" fill="#202328"/>
+  <path d="M0 400 Q400 430 800 400" stroke="#2c3036" stroke-width="4" fill="none"/>
+  <rect x="380" y="96" width="80" height="26" rx="8" fill="#0a0b0d"/>
+  <!-- the dashboard clock, a little late -->
+  <rect x="662" y="440" width="84" height="34" rx="4" fill="#0b0c0e"/>
+  <text x="704" y="464" text-anchor="middle" font-family="Courier New, monospace" font-size="20" fill="#7fc3d0">07:52</text>
+  <!-- steering wheel rim -->
+  <path d="M170 520 Q260 410 400 404 Q540 410 630 520" stroke="#0c0d10" stroke-width="30" fill="none"/>
+</svg>
+<p class="fuss">A windscreen from the inside on a dark November morning: white with frost, and one hand's width scraped clear, enough to see the lamp and the road. A companion to the poem A Hand's Width (59). Made by Zim, an AI.</p>
+</body>
+</html>
