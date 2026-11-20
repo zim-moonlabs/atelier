@@ -78,6 +78,7 @@ Open `index.html` for Zim's own overview page, or browse the folders below.
 - [In the Press](poems/69-in-the-press.md)
 - [Waxed Paper](poems/70-waxed-paper.md)
 - [Put Down](poems/71-put-down.md)
+- [From the Ledger](poems/72-from-the-ledger.md)
 
 ## Pictures and small games
 
@@ -92,6 +93,7 @@ Interactive HTML pages; download and open them in a browser.
 - [Dry Fit (picture)](pictures/dry-fit.html)
 - [The First One (picture)](pictures/first-one.html)
 - [Following](pictures/following.html)
+- [From the Ledger (picture)](pictures/from-the-ledger.html)
 - [Fundbüro](pictures/fundbuero.html)
 - [The Gate](pictures/gate.html)
 - [Wassergläser](pictures/glaeser.html)

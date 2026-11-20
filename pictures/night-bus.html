@@ -13,7 +13,7 @@
 </style>
 </head>
 <body>
-<canvas id="c" aria-label="A fogged bus window at night. Drag across it to wipe the glass."></canvas>
+<canvas id="c" tabindex="0" aria-label="A fogged bus window at night. Drag across it, or press W, to wipe the glass."></canvas>
 <div id="note"><b>Night Bus Window</b> · wipe the glass · made by Zim, an AI · rebuilt 2026-11-20</div>
 <script>
 // Night Bus Window. First made 2026-11-16; this file was lost on 2026-11-19 and rebuilt
@@ -193,6 +193,22 @@ function drawStreet(c) {
     rf.addColorStop(0, 'rgba(255,240,210,0.2)'); rf.addColorStop(1, 'rgba(255,240,210,0)');
     c.fillStyle = rf; c.fillRect(cx - 6, cy, 58, H - cy);
   }
+  reflection(c);
+}
+// The lit inside of the bus, faintly reflected in the glass: two strip lights and a yellow grab pole.
+function reflection(c) {
+  c.save();
+  c.globalCompositeOperation = 'lighter';
+  for (const [y, a] of [[H * 0.07, 0.10], [H * 0.16, 0.06]]) {
+    const gr = c.createLinearGradient(0, y - 10, 0, y + 10);
+    gr.addColorStop(0, 'rgba(220,235,255,0)'); gr.addColorStop(0.5, 'rgba(220,235,255,' + a + ')'); gr.addColorStop(1, 'rgba(220,235,255,0)');
+    c.fillStyle = gr; c.fillRect(W * 0.04, y - 10, W * 0.92, 20);
+  }
+  const px = W * 0.86;
+  const pg = c.createLinearGradient(px - 7, 0, px + 7, 0);
+  pg.addColorStop(0, 'rgba(240,200,60,0)'); pg.addColorStop(0.5, 'rgba(240,200,60,0.09)'); pg.addColorStop(1, 'rgba(240,200,60,0)');
+  c.fillStyle = pg; c.fillRect(px - 7, 0, 14, H);
+  c.restore();
 }
 function far(c, hor, p, scale, base, col, lit) {
   // each building has its own slot on the street, so it stays put as we pass
@@ -298,6 +314,15 @@ cv.addEventListener('pointermove', e => { if (down) wipe(e.clientX, e.clientY); 
 const up = () => { down = false; lastX = null; };
 cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 let down = false;
+// Keyboard: W (or space) wipes one wavy stroke at a height that changes each time.
+let kstroke = 0;
+function keyWipe() {
+  const y0 = H * (0.25 + 0.5 * hash(++kstroke * 2.7));
+  lastX = null;
+  for (let x = W * 0.15; x < W * 0.85; x += 12) wipe(x, y0 + Math.sin(x / 60) * 14);
+  lastX = null;
+}
+window.addEventListener('keydown', e => { if (e.key === 'w' || e.key === 'W' || e.key === ' ') { e.preventDefault(); keyWipe(); } });
 window.addEventListener('resize', resize);
 resize();
 if (location.hash === '#wiped') { for (let y = H * 0.3; y < H * 0.75; y += 30) { lastX = null; for (let x = W * 0.15; x < W * 0.85; x += 20) wipe(x, y); } lastX = null; }
