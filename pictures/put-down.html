@@ -104,7 +104,36 @@ function impact() {
   thump();
 }
 
+// the sounds the poem says it is not: the mug set down too hard, the stapler sliding off
+let mugT = -1, ripple = -1, mugY = 0;
+const MUG_UP = 0.45, MUG_DOWN = 0.07;
+function knockMug() {
+  if (mugT >= 0) return;
+  mugT = 0;
+}
+const EDGE = 300, STAPLER_LEN = 170;
+let staplerSlide = 0, staplerTarget = 0, staplerV = 0;
+function staplerMax() { return EDGE - STAPLER.z - 34; }   // it stops with one end just over the edge
+function nudgeStapler() {
+  const max = staplerMax();
+  if (staplerTarget >= max - 0.5) { staplerV = 0.6; return; }   // at the edge: only a wobble
+  staplerTarget = Math.min(max, staplerTarget + 30);
+  scrape();
+}
+function stepThings(dt) {
+  if (mugT >= 0) {
+    mugT += dt;
+    if (mugT < MUG_UP) mugY = 22 * ease(mugT / MUG_UP);
+    else if (mugT < MUG_UP + MUG_DOWN) { const k = (mugT - MUG_UP) / MUG_DOWN; mugY = 22 * (1 - k * k); }
+    else { mugY = 0; mugT = -1; ripple = 0; clunk(); }
+  }
+  if (ripple >= 0) { ripple += dt; if (ripple > 2.6) ripple = -1; }
+  staplerSlide += (staplerTarget - staplerSlide) * Math.min(1, dt * 7);
+  staplerV = Math.max(0, staplerV - dt * 2.5);
+}
+
 function step(dt) {
+  stepThings(dt);
   pt += dt;
   const k = phase in LEN ? pt / LEN[phase] : 0;
   if (phase === 'gather') {
@@ -171,9 +200,34 @@ function step(dt) {
   T += dt;
 }
 let T = 0;
-// for looking at it: #tap=1,6 taps at those seconds
-const autoTaps = ((location.hash.match(/tap=([\d.,]+)/) || [])[1] || '').split(',').filter(Boolean).map(Number);
-function autoTap() { while (autoTaps.length && T >= autoTaps[0]) { autoTaps.shift(); tap(); } }
+// for looking at it: #tap=1,6,m2,s3 taps the pages at 1 and 6 s, the mug at 2, the stapler at 3
+const autoTaps = ((location.hash.match(/tap=([\d.,ms]+)/) || [])[1] || '').split(',').filter(Boolean)
+  .map(w => ({ what: /^[ms]/.test(w) ? w[0] : 'p', at: parseFloat(w.replace(/^[ms]/, '')) })).sort((a, b) => a.at - b.at);
+function autoTap() {
+  while (autoTaps.length && T >= autoTaps[0].at) {
+    const w = autoTaps.shift().what;
+    w === 'm' ? knockMug() : w === 's' ? nudgeStapler() : tap();
+  }
+}
+
+// what a finger lands on: the mug, the stapler, or anywhere else (the pages)
+function hitMug(x, y) {
+  const r = 42 * S, b = P(MUG.x, MUG.z), t = P(MUG.x, MUG.z, 95);
+  return Math.abs(x - b[0]) < r + 14 * S && y > t[1] - r * TILT && y < b[1] + r * TILT;
+}
+function hitStapler(x, y) {
+  if (!STAPLER.show) return false;
+  const c0 = P(STAPLER.x, STAPLER.z + staplerSlide);
+  const dx = x - c0[0], dy = (y - c0[1] + 8 * S) / TILT;
+  const cs = Math.cos(0.35), sn = Math.sin(0.35);
+  const u = dx * cs - dy * sn, v = dx * sn + dy * cs;
+  return Math.abs(u) < 95 * S && Math.abs(v) < 34 * S;
+}
+function tapAt(x, y) {
+  if (hitMug(x, y)) knockMug();
+  else if (hitStapler(x, y)) nudgeStapler();
+  else tap();
+}
 
 // ---------- sound: one low knock, made, not recorded ----------
 function thump() {
@@ -189,6 +243,29 @@ function thump() {
   const n = ac.createBufferSource(), f = ac.createBiquadFilter(), ng = ac.createGain();
   n.buffer = b; f.type = 'lowpass'; f.frequency.value = 900; ng.gain.value = 0.18;
   n.connect(f).connect(ng).connect(ac.destination); n.start(t0);
+}
+function noise(t0, secs, type, freq, q, gain) {
+  const len = Math.floor(ac.sampleRate * secs), b = ac.createBuffer(1, len, ac.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+  const n = ac.createBufferSource(), f = ac.createBiquadFilter(), ng = ac.createGain();
+  n.buffer = b; f.type = type; f.frequency.value = freq; f.Q.value = q; ng.gain.value = gain;
+  n.connect(f).connect(ng).connect(ac.destination); n.start(t0);
+}
+function clunk() {   // ceramic on wood, too hard
+  if (!soundOn || !ac) return;
+  const t0 = ac.currentTime;
+  for (const [f, a] of [[520, 0.16], [1310, 0.06]]) {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.frequency.setValueAtTime(f, t0);
+    og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(a, t0 + 0.003);
+    og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+    o.connect(og).connect(ac.destination); o.start(t0); o.stop(t0 + 0.2);
+  }
+  noise(t0, 0.04, 'bandpass', 2400, 1.2, 0.3);
+}
+function scrape() {  // metal and rubber across the grain
+  if (!soundOn || !ac) return;
+  noise(ac.currentTime, 0.22, 'bandpass', 1100, 3, 0.35);
 }
 function wake() {
   if (ac || !soundOn) return;
@@ -286,10 +363,10 @@ function drawLamp() {
 }
 
 function drawMug() {
-  const m = P(MUG.x, MUG.z), r = 42;
-  const sh = P(MUG.x + 15, MUG.z + 8);
-  g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.ellipse(sh[0], sh[1], r * 1.15 * S, r * TILT * 1.1 * S, 0, 0, 7); g.fill();
-  const top = P(MUG.x, MUG.z, 95);
+  const m = P(MUG.x, MUG.z, mugY), r = 42;
+  const sh = P(MUG.x + 15 + mugY * 0.4, MUG.z + 8);
+  g.fillStyle = 'rgba(0,0,0,' + (0.35 - mugY * 0.006) + ')'; g.beginPath(); g.ellipse(sh[0], sh[1], (r * 1.15 + mugY * 0.3) * S, (r * 1.1 + mugY * 0.3) * TILT * S, 0, 0, 7); g.fill();
+  const top = P(MUG.x, MUG.z, 95 + mugY);
   const bodyG = g.createLinearGradient(m[0] - r * S, 0, m[0] + r * S, 0);
   bodyG.addColorStop(0, '#6e675e'); bodyG.addColorStop(0.35, '#8d857a'); bodyG.addColorStop(1, '#3a3631');
   g.fillStyle = bodyG;
@@ -301,16 +378,34 @@ function drawMug() {
   // rim and the cold tea
   g.fillStyle = '#9a9184'; g.beginPath(); g.ellipse(top[0], top[1], r * S, r * TILT * S, 0, 0, 7); g.fill();
   g.fillStyle = '#2e2117'; g.beginPath(); g.ellipse(top[0], top[1] + 2 * S, (r - 5) * S, (r - 5) * TILT * S, 0, 0, 7); g.fill();
+  if (ripple >= 0) {
+    // rings run out from the middle of the tea and fade
+    g.save(); g.beginPath(); g.ellipse(top[0], top[1] + 2 * S, (r - 5) * S, (r - 5) * TILT * S, 0, 0, 7); g.clip();
+    const fade = 1 - ripple / 2.6;
+    g.lineWidth = Math.max(0.7, 1.2 * S);
+    for (let i = 0; i < 3; i++) {
+      const k = (ripple - i * 0.28) * 0.9;
+      if (k <= 0 || k > 1) continue;
+      g.strokeStyle = 'rgba(214,170,120,' + (0.45 * fade * (1 - k * 0.6)) + ')';
+      g.beginPath(); g.ellipse(top[0], top[1] + 2 * S, (r - 5) * k * S, (r - 5) * k * TILT * S, 0, 0, 7); g.stroke();
+    }
+    g.restore();
+  }
 }
 
 function drawStapler() {
-  // near the front edge, angled, the way it ends up
-  const c0 = P(STAPLER.x, STAPLER.z);
-  g.save(); g.translate(c0[0], c0[1]); g.scale(1, TILT); g.rotate(-0.35);
+  // near the front edge, angled, the way it ends up; each nudge brings it closer
+  const c0 = P(STAPLER.x, STAPLER.z + staplerSlide);
+  const rot = -0.35 + Math.sin(T * 38) * staplerV * 0.03;
+  g.save();
+  g.beginPath(); g.rect(0, 0, W, P(0, EDGE)[1]); g.clip();   // no shadow beyond the edge
+  g.translate(c0[0], c0[1]); g.scale(1, TILT); g.rotate(rot);
   g.fillStyle = 'rgba(0,0,0,0.4)'; g.beginPath(); g.ellipse(6 * S, 8 * S, 92 * S, 24 * S, 0, 0, 7); g.fill();
+  g.restore();
+  g.save(); g.translate(c0[0], c0[1]); g.scale(1, TILT); g.rotate(rot);
   g.fillStyle = '#17181c'; g.beginPath(); g.roundRect(-85 * S, -18 * S, 170 * S, 36 * S, 14 * S); g.fill();
   g.restore();
-  g.save(); g.translate(c0[0], c0[1] - 16 * S); g.scale(1, TILT); g.rotate(-0.35);
+  g.save(); g.translate(c0[0], c0[1] - 16 * S); g.scale(1, TILT); g.rotate(rot);
   g.fillStyle = '#5b2a26'; g.beginPath(); g.roundRect(-82 * S, -15 * S, 158 * S, 30 * S, 13 * S); g.fill();
   g.fillStyle = 'rgba(255,200,160,0.18)'; g.beginPath(); g.roundRect(-74 * S, -12 * S, 130 * S, 6 * S, 3 * S); g.fill();
   g.restore();
@@ -505,9 +600,14 @@ function frame(now) {
 }
 resize();
 addEventListener('resize', resize);
-c.addEventListener('pointerdown', e => { wake(); tap(); });
+c.addEventListener('pointerdown', e => { wake(); tapAt(e.clientX, e.clientY); });
 addEventListener('keydown', e => {
-  if (e.key === ' ' || e.key === 'Enter') { if (e.target === sndEl) return; e.preventDefault(); wake(); tap(); }
+  if (e.key === ' ' || e.key === 'Enter') {
+    if (e.target === sndEl) return;
+    e.preventDefault();
+    if (e.repeat) return;   // a held key is one tap, not a run of them
+    wake(); tap();
+  }
 });
 sndEl.addEventListener('click', e => {
   e.stopPropagation(); soundOn = !soundOn;
