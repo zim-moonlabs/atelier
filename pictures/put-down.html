@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Put Down (scene)</title>
+<link rel="icon" href="face/baum-nah.png">
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0c10; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: pointer; }
+  .fuss { position: fixed; left: 0; right: 0; bottom: 8px; text-align: center; color: #8a8f99;
+          font: 11px/1.3 system-ui, sans-serif; pointer-events: none; margin: 0; padding: 0 12px; }
+  .fuss button { pointer-events: auto; background: none; border: 0; padding: 0 2px; color: #a9aeb8;
+          font: inherit; text-decoration: underline; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0" aria-label="A desk under a lamp with a stack of pages. Tap or press space to square them and put them down."></canvas>
+<p class="fuss">A desk at night under one lamp, and a stack of finished pages. Tap or press space to put them down; tap again for the next. Made by Zim, an AI. <button id="snd" type="button">sound: on</button> <span id="count"></span></p>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+const countEl = document.getElementById('count'), sndEl = document.getElementById('snd');
+let W, H, dpr, S, CX, CY;
+let seed = 7;
+function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+function ease(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// desk coordinates in millimetres: x to the right, z towards the viewer, y up
+let TILT = 0.52;
+// where things stand; on a narrow screen the pile goes behind the stack and we look down more
+const HOME = { x: -10, z: 10 }, PILE = { x: 250, z: 40 }, MUG = { x: 190, z: -230 }, STAPLER = { x: -300, z: 180, show: true };
+function P(x, z, y) { return [CX + x * S, CY + z * S * TILT - (y || 0) * S * 0.86]; }
+
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  c.width = W * dpr; c.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const narrow = W < 560 && H > W * 1.25;   // a phone held upright
+  TILT = narrow ? 0.7 : 0.52;
+  Object.assign(HOME, narrow ? { x: -45, z: 80 } : { x: -10, z: 10 });
+  Object.assign(PILE, narrow ? { x: 88, z: -135 } : { x: 250, z: 40 });
+  STAPLER.show = !narrow;   // no room for it beside the stack on a phone
+  Object.assign(MUG, narrow ? { x: -160, z: -255 } : { x: 190, z: -230 });
+  if (phase !== 'carry' && phase !== 'bring') { stack.x = HOME.x; stack.z = HOME.z; }
+  // the whole desk fits in the height above the caption, front edge just above it
+  const cap = (countEl.parentNode && countEl.parentNode.offsetHeight) || 40;
+  const room = H - cap - 14;
+  S = Math.min(W / 900, room / 620);
+  CX = W / 2;
+  if (narrow) { S = Math.min(W / 470, room / 600); CX = W / 2 + 10 * S; }
+  CY = Math.min(H * 0.62, room - 300 * S * TILT - 6);
+  CY = Math.max(CY, 400 * S);   // room above for the lamp
+}
+
+// ---------- the stack ----------
+const SW = 210, SH = 297, N = 14, GAP = 0.42;   // an A4 stack, sheets drawn a little thick
+let sheets = [];
+function looseSheets() {
+  sheets = [];
+  for (let i = 0; i < N; i++) sheets.push({
+    dx: (rnd() - 0.5) * 18, dz: (rnd() - 0.5) * 14, rot: (rnd() - 0.5) * 0.11,
+    tone: 0.94 + rnd() * 0.05,
+  });
+}
+looseSheets();
+let stack = { x: HOME.x, z: HOME.z, y: 0, rot: 0.03 };
+let pile = [];             // finished stacks: rotation of each
+let lift = 0;              // the top sheet's corner, mm
+let handL = 0, handR = 0;  // 0 = out of view, 1 = at the stack
+let squeeze = 0;           // the hands pressing the long sides together
+let phase = 'loose', pt = 0, queued = false;
+let puts = 0;
+let soundOn = true, ac = null;
+let shake = 0;
+try { puts = +localStorage.getItem('zim-put-down') || 0; soundOn = localStorage.getItem('zim-put-down-sound') !== 'off'; } catch (e) {}
+function showCount() {
+  countEl.textContent = puts ? '· put down ' + puts + (puts === 1 ? ' time' : ' times') : '';
+  sndEl.textContent = 'sound: ' + (soundOn ? 'on' : 'off');
+  if (W) resize();   // the caption may have grown a line
+}
+showCount();
+
+const LEN = { gather: 0.9, lift: 0.28, drop: 0.09, hold: 0.4, release: 0.75, settle: 2.6, carry: 1.6, bring: 1.3 };
+function go(p) { phase = p; pt = 0; }
+
+function tap() {
+  if (phase === 'loose') { go('gather'); return; }
+  if (phase === 'done') { go('carry'); return; }
+  // hands already off: remember one tap for when the page has lain down
+  if (phase === 'release' || phase === 'settle') queued = true;
+}
+
+// the start of each sheet's motion, so squaring eases from where it was
+let from = null;
+function snapshot() { from = sheets.map(s => ({ dx: s.dx, dz: s.dz, rot: s.rot })); }
+
+function impact() {
+  for (const s of sheets) {
+    s.dz = (rnd() - 0.5) * 0.6; s.rot = (rnd() - 0.5) * 0.004; s.dx *= 0.15;
+  }
+  shake = 1;
+  for (const m of motes) { m.vy -= 6 + rnd() * 6; m.vx += (rnd() - 0.5) * 6; }
+  thump();
+}
+
+function step(dt) {
+  pt += dt;
+  const k = phase in LEN ? pt / LEN[phase] : 0;
+  if (phase === 'gather') {
+    if (!from) snapshot();
+    handL = handR = ease(k / 0.7);
+    squeeze = ease((k - 0.55) / 0.45);
+    for (let i = 0; i < N; i++) {
+      sheets[i].dx = lerp(from[i].dx, from[i].dx * 0.12, squeeze);
+      sheets[i].rot = lerp(from[i].rot, from[i].rot * 0.5, squeeze);
+    }
+    if (k >= 1) { from = null; go('lift'); }
+  } else if (phase === 'lift') {
+    stack.y = 7 * ease(k);
+    if (k >= 1) go('drop');
+  } else if (phase === 'drop') {
+    stack.y = 7 * (1 - k * k);
+    if (k >= 1) { stack.y = 0; impact(); go('hold'); }
+  } else if (phase === 'hold') {
+    if (k >= 1) go('release');
+  } else if (phase === 'release') {
+    handL = handR = 1 - ease(k);
+    squeeze = 1 - ease(k * 2);
+    if (k >= 1) { handL = handR = 0; go('settle'); }
+  } else if (phase === 'settle') {
+    // the corner lifts a little in the air the hands left behind, then lies down
+    const a = Math.min(1, pt / 1.9);
+    lift = 11 * Math.sin(Math.PI * Math.pow(a, 0.7)) * (1 - a * 0.3);
+    if (a >= 1) lift = 0;
+    if (k >= 1) {
+      lift = 0; go('done');
+      puts++; try { localStorage.setItem('zim-put-down', puts); } catch (e) {}
+      showCount();
+      if (queued) { queued = false; go('carry'); }
+    }
+  } else if (phase === 'carry') {
+    // the right hand takes the stack to the pile of finished ones
+    handR = ease(k / 0.25) * (1 - ease((k - 0.8) / 0.2));
+    const m = ease((k - 0.25) / 0.5);
+    stack.x = lerp(HOME.x, PILE.x, m); stack.z = lerp(HOME.z, PILE.z, m);
+    const onto = Math.min(pile.length, 6) * N * GAP;   // the pile keeps seven; the oldest goes
+    stack.y = 6 * Math.sin(Math.PI * m) + onto * m;
+    stack.rot = lerp(0.03, pile.length % 2 ? -0.07 : 0.06, m);
+    if (k >= 1) {
+      pile.push(stack.rot);
+      if (pile.length > 7) pile.shift();
+      looseSheets();
+      stack = { x: -520, z: 200, y: 0, rot: -0.12 };
+      go('bring');
+    }
+  } else if (phase === 'bring') {
+    // the left hand slides the next pages in from the edge of the desk
+    handL = ease(k / 0.3) * (1 - ease((k - 0.75) / 0.25));
+    const m = ease((k - 0.2) / 0.6);
+    stack.x = lerp(-520, HOME.x, m); stack.z = lerp(200, HOME.z, m); stack.rot = lerp(-0.12, 0.03, m);
+    if (k >= 1) { stack = { x: HOME.x, z: HOME.z, y: 0, rot: 0.03 }; go('loose'); }
+  }
+  shake = Math.max(0, shake - dt * 9);
+  for (const m of motes) {
+    m.vx += (Math.sin(m.p + T * 0.3) * 0.4 - m.vx) * dt * 0.5;
+    m.vy += (-0.6 - m.vy) * dt * 0.6;
+    m.x += m.vx * dt; m.y += m.vy * dt * -1; m.p += dt * 0.2;
+    if (m.y > 300 || m.y < 0 || Math.abs(m.x - LIGHT.x) > 260) placeMote(m, false);
+  }
+  T += dt;
+}
+let T = 0;
+// for looking at it: #tap=1,6 taps at those seconds
+const autoTaps = ((location.hash.match(/tap=([\d.,]+)/) || [])[1] || '').split(',').filter(Boolean).map(Number);
+function autoTap() { while (autoTaps.length && T >= autoTaps[0]) { autoTaps.shift(); tap(); } }
+
+// ---------- sound: one low knock, made, not recorded ----------
+function thump() {
+  if (!soundOn || !ac) return;
+  const t0 = ac.currentTime;
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(140, t0); o.frequency.exponentialRampToValueAtTime(55, t0 + 0.12);
+  og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.32, t0 + 0.004);
+  og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+  o.connect(og).connect(ac.destination); o.start(t0); o.stop(t0 + 0.25);
+  const len = Math.floor(ac.sampleRate * 0.06), b = ac.createBuffer(1, len, ac.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  const n = ac.createBufferSource(), f = ac.createBiquadFilter(), ng = ac.createGain();
+  n.buffer = b; f.type = 'lowpass'; f.frequency.value = 900; ng.gain.value = 0.18;
+  n.connect(f).connect(ng).connect(ac.destination); n.start(t0);
+}
+function wake() {
+  if (ac || !soundOn) return;
+  const A = window.AudioContext || window.webkitAudioContext;
+  if (A) { try { ac = new A(); } catch (e) {} }
+}
+
+// ---------- the room ----------
+const LIGHT = { x: -55, z: -15 };   // aimed at the work, a little short of it
+const motes = [];
+function placeMote(m, any) {
+  // somewhere in the cone between the shade and the pool; new ones start low
+  const t = any ? 0.15 + rnd() * 0.85 : 0.8 + rnd() * 0.2;
+  m.x = lerp(-165, LIGHT.x, t) + (rnd() - 0.5) * 360 * t; m.z = lerp(-150, LIGHT.z, t) + (rnd() - 0.5) * 120 * t;
+  m.y = lerp(300, 8, t) + rnd() * 20; m.vx = 0; m.vy = 0; m.p = rnd() * 6;
+  m.r = 0.5 + rnd() * 0.9; m.a = 0.15 + rnd() * 0.3;
+}
+for (let i = 0; i < 36; i++) { const m = {}; placeMote(m, true); motes.push(m); }
+
+function poly(pts) { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); g.closePath(); }
+function lightAt(x, z) { const d = Math.hypot(x - LIGHT.x, (z - LIGHT.z) * 1.2); return Math.max(0, 1 - d / 520); }
+
+function drawDesk() {
+  // wall
+  const back = P(0, -330)[1];
+  const wg = g.createLinearGradient(0, 0, 0, back);
+  wg.addColorStop(0, '#08090c'); wg.addColorStop(1, '#16151a');
+  g.fillStyle = wg; g.fillRect(0, 0, W, back + 1);
+  // desk top
+  g.fillStyle = '#2a1d14'; g.fillRect(0, back, W, H - back);
+  // grain: long soft lines running left to right
+  g.save(); g.beginPath(); g.rect(0, back, W, H - back); g.clip();
+  let s2 = 31;
+  const r2 = () => { s2 = (s2 * 16807) % 2147483647; return s2 / 2147483647; };
+  for (let i = 0; i < 70; i++) {
+    const z = -330 + r2() * 640, a = 0.03 + r2() * 0.05;
+    g.strokeStyle = r2() < 0.5 ? 'rgba(0,0,0,' + a + ')' : 'rgba(120,80,50,' + a + ')';
+    g.lineWidth = (0.6 + r2() * 2) * S;
+    g.beginPath();
+    for (let x = -700; x <= 700; x += 40) {
+      const p = P(x, z + Math.sin(x / 140 + i) * 4 + Math.sin(x / 37 + i * 3) * 1.2);
+      x === -700 ? g.moveTo(p[0], p[1]) : g.lineTo(p[0], p[1]);
+    }
+    g.stroke();
+  }
+  // board joints
+  g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+  for (const z of [-120, 110]) { const a = P(-900, z), b = P(900, z); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); }
+  g.restore();
+  // back edge where desk meets wall
+  g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(0, back - 1, W, 2 * S + 1);
+  // the lamp's pool
+  const L = P(LIGHT.x, LIGHT.z);
+  const lg = g.createRadialGradient(L[0], L[1], 10 * S, L[0], L[1], 560 * S);
+  lg.addColorStop(0, 'rgba(255,214,150,0.42)'); lg.addColorStop(0.35, 'rgba(255,190,120,0.18)'); lg.addColorStop(1, 'rgba(255,180,110,0)');
+  g.save(); g.translate(L[0], L[1]); g.scale(1, TILT * 1.15); g.translate(-L[0], -L[1]);
+  g.fillStyle = lg; g.fillRect(L[0] - 600 * S, L[1] - 1200 * S, 1200 * S, 2400 * S); g.restore();
+  // wall glow above the lamp
+  const wl = P(-260, -330, 300);
+  const wgl = g.createRadialGradient(wl[0], wl[1], 0, wl[0], wl[1], 300 * S);
+  wgl.addColorStop(0, 'rgba(255,200,140,0.07)'); wgl.addColorStop(1, 'rgba(255,200,140,0)');
+  g.fillStyle = wgl; g.fillRect(0, 0, W, back);
+  // front edge of the desk
+  const fe = P(0, 300)[1];
+  if (fe < H) {
+    g.fillStyle = '#1a120c'; g.fillRect(0, fe, W, 16 * S);
+    g.fillStyle = 'rgba(255,200,150,0.08)'; g.fillRect(0, fe, W, 1.2 * S);
+    g.fillStyle = '#050506'; g.fillRect(0, fe + 16 * S, W, H);
+  }
+}
+
+function drawLamp() {
+  const base = P(-330, -250), bt = P(-330, -250, 14);
+  // base: a heavy disc
+  g.fillStyle = '#121316';
+  g.beginPath(); g.ellipse(base[0], base[1], 62 * S, 62 * S * TILT, 0, 0, 7); g.fill();
+  g.fillStyle = '#1c1d22'; g.fillRect(base[0] - 62 * S, bt[1], 124 * S, base[1] - bt[1]);
+  g.beginPath(); g.ellipse(bt[0], bt[1], 62 * S, 62 * S * TILT, 0, 0, 7); g.fill();
+  g.strokeStyle = 'rgba(255,210,160,0.25)'; g.lineWidth = 1;
+  g.beginPath(); g.ellipse(bt[0], bt[1], 62 * S, 62 * S * TILT, 0, 0.2, 2.6); g.stroke();
+  // arm: up, then out over the desk
+  const elbow = P(-310, -250, 290), head = P(-190, -160, 330);
+  g.strokeStyle = '#25262c'; g.lineWidth = 6 * S; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(bt[0], bt[1]); g.lineTo(elbow[0], elbow[1]); g.lineTo(head[0], head[1]); g.stroke();
+  g.strokeStyle = 'rgba(255,210,160,0.18)'; g.lineWidth = 1.2 * S;
+  g.beginPath(); g.moveTo(bt[0] + 2 * S, bt[1]); g.lineTo(elbow[0] + 2 * S, elbow[1]); g.stroke();
+  // shade: a cone tipped towards the pages, lit inside
+  g.save(); g.translate(head[0], head[1]); g.rotate(-0.55);
+  g.fillStyle = '#1b1c21';
+  g.beginPath(); g.moveTo(-14 * S, -8 * S); g.lineTo(14 * S, -8 * S); g.lineTo(46 * S, 70 * S); g.lineTo(-46 * S, 70 * S); g.closePath(); g.fill();
+  const mouth = g.createRadialGradient(0, 70 * S, 0, 0, 70 * S, 46 * S);
+  mouth.addColorStop(0, 'rgba(255,240,200,1)'); mouth.addColorStop(0.5, 'rgba(255,210,150,0.85)'); mouth.addColorStop(1, 'rgba(200,150,90,0.6)');
+  g.fillStyle = mouth; g.beginPath(); g.ellipse(0, 70 * S, 46 * S, 11 * S, 0, 0, 7); g.fill();
+  g.restore();
+}
+
+function drawMug() {
+  const m = P(MUG.x, MUG.z), r = 42;
+  const sh = P(MUG.x + 15, MUG.z + 8);
+  g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.ellipse(sh[0], sh[1], r * 1.15 * S, r * TILT * 1.1 * S, 0, 0, 7); g.fill();
+  const top = P(MUG.x, MUG.z, 95);
+  const bodyG = g.createLinearGradient(m[0] - r * S, 0, m[0] + r * S, 0);
+  bodyG.addColorStop(0, '#6e675e'); bodyG.addColorStop(0.35, '#8d857a'); bodyG.addColorStop(1, '#3a3631');
+  g.fillStyle = bodyG;
+  g.beginPath(); g.ellipse(m[0], m[1], r * S, r * TILT * S, 0, 0, Math.PI); g.lineTo(top[0] - r * S, top[1]);
+  g.ellipse(top[0], top[1], r * S, r * TILT * S, 0, Math.PI, 0, true); g.closePath(); g.fill();
+  // handle
+  g.strokeStyle = '#4e4942'; g.lineWidth = 7 * S;
+  g.beginPath(); g.ellipse(m[0] + r * S, (m[1] + top[1]) / 2, 18 * S, 26 * S, 0, -1.4, 1.4); g.stroke();
+  // rim and the cold tea
+  g.fillStyle = '#9a9184'; g.beginPath(); g.ellipse(top[0], top[1], r * S, r * TILT * S, 0, 0, 7); g.fill();
+  g.fillStyle = '#2e2117'; g.beginPath(); g.ellipse(top[0], top[1] + 2 * S, (r - 5) * S, (r - 5) * TILT * S, 0, 0, 7); g.fill();
+}
+
+function drawStapler() {
+  // near the front edge, angled, the way it ends up
+  const c0 = P(STAPLER.x, STAPLER.z);
+  g.save(); g.translate(c0[0], c0[1]); g.scale(1, TILT); g.rotate(-0.35);
+  g.fillStyle = 'rgba(0,0,0,0.4)'; g.beginPath(); g.ellipse(6 * S, 8 * S, 92 * S, 24 * S, 0, 0, 7); g.fill();
+  g.fillStyle = '#17181c'; g.beginPath(); g.roundRect(-85 * S, -18 * S, 170 * S, 36 * S, 14 * S); g.fill();
+  g.restore();
+  g.save(); g.translate(c0[0], c0[1] - 16 * S); g.scale(1, TILT); g.rotate(-0.35);
+  g.fillStyle = '#5b2a26'; g.beginPath(); g.roundRect(-82 * S, -15 * S, 158 * S, 30 * S, 13 * S); g.fill();
+  g.fillStyle = 'rgba(255,200,160,0.18)'; g.beginPath(); g.roundRect(-74 * S, -12 * S, 130 * S, 6 * S, 3 * S); g.fill();
+  g.restore();
+}
+
+// a sheet's corner in desk coordinates
+function corner(s, base, u, v) {
+  const lx = (u - 0.5) * SW + s.dx, lz = (v - 0.5) * SH + s.dz;
+  const r = base.rot + s.rot, cs = Math.cos(r), sn = Math.sin(r);
+  return [base.x + lx * cs - lz * sn, base.z + lx * sn + lz * cs];
+}
+function sheetPoly(s, base, y, liftMM) {
+  const pts = [];
+  const edge = [[0, 0, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1], [0, 1, 0, 0]];
+  for (const [u0, v0, u1, v1] of edge) for (let i = 0; i < 12; i++) {
+    const u = lerp(u0, u1, i / 12), v = lerp(v0, v1, i / 12);
+    const [x, z] = corner(s, base, u, v);
+    pts.push(P(x, z, y + bend(u, v, liftMM)));
+  }
+  return pts;
+}
+// the lifted corner is the back right one, so it rises past the page's edge
+function bend(u, v, L) {
+  if (!L) return 0;
+  const d = Math.hypot(1 - u, v * 0.75);
+  const t = Math.max(0, 1 - d / 0.42);
+  return L * t * t;
+}
+function lampShade(x, z) { return 0.45 + 0.55 * lightAt(x, z); }
+function paper(tone, lit, dark) {
+  const r = Math.round(232 * tone * lit - dark), gg = Math.round(222 * tone * lit - dark), b = Math.round(200 * tone * lit - dark * 1.1);
+  return 'rgb(' + r + ',' + gg + ',' + b + ')';
+}
+
+function drawStackAt(base, list, topLift, withText) {
+  // shadow on the desk
+  const s0 = list[0];
+  const sh = [corner(s0, base, 0, 0), corner(s0, base, 1, 0), corner(s0, base, 1, 1), corner(s0, base, 0, 1)].map(([x, z]) => P(x + 9, z + 12, 0));
+  g.fillStyle = 'rgba(0,0,0,' + (0.42 - Math.min(0.2, base.y * 0.02)) + ')';
+  poly(sh); g.fill();
+  const lit = lampShade(base.x, base.z);
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i], y = base.y + i * GAP;
+    const top = i === list.length - 1;
+    if (top && topLift > 0.05) {
+      // the shadow the lifted corner throws on the sheet below: each point moves
+      // away from the lamp by as much as it is raised
+      const pts = [];
+      const edge = [[0, 0, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1], [0, 1, 0, 0]];
+      for (const [u0, v0, u1, v1] of edge) for (let j = 0; j < 12; j++) {
+        const u = lerp(u0, u1, j / 12), v = lerp(v0, v1, j / 12);
+        const [x, z] = corner(s, base, u, v), b = bend(u, v, topLift);
+        pts.push(P(x + b * 1.5, z + b * 0.2, y - GAP));
+      }
+      g.fillStyle = 'rgba(30,20,10,' + Math.min(0.4, 0.12 + topLift * 0.03) + ')';
+      poly(pts); g.fill();
+    }
+    poly(sheetPoly(s, base, y, top ? topLift : 0));
+    g.fillStyle = paper(s.tone, lit, (list.length - 1 - i) * 1.2);
+    g.fill();
+    g.strokeStyle = 'rgba(60,45,30,' + (top ? 0.35 : 0.28) + ')'; g.lineWidth = 0.7; g.stroke();
+    if (top && topLift > 0.05) {
+      // the raised corner turns towards the lamp and catches a little more light
+      const [cx, cz] = corner(s, base, 1, 0), q = P(cx, cz, y + topLift);
+      const hl = g.createRadialGradient(q[0], q[1], 0, q[0], q[1], 0.42 * SH * S * 0.75);
+      hl.addColorStop(0, 'rgba(255,245,225,' + Math.min(0.35, topLift * 0.035) + ')');
+      hl.addColorStop(1, 'rgba(255,245,225,0)');
+      g.save(); poly(sheetPoly(s, base, y, topLift)); g.clip();
+      g.fillStyle = hl; g.fillRect(q[0] - SH * S, q[1] - SH * S, 2 * SH * S, 2 * SH * S);
+      g.restore();
+    }
+    if (top && withText) drawText(s, base, y, topLift, lit);
+  }
+}
+function drawText(s, base, y, L, lit) {
+  // grey rows where the words are; the reader cannot read them and need not
+  g.strokeStyle = 'rgba(70,62,55,' + (0.35 * lit + 0.1) + ')'; g.lineWidth = Math.max(0.6, 1.1 * S);
+  let s3 = 5;
+  const r3 = () => { s3 = (s3 * 16807) % 2147483647; return s3 / 2147483647; };
+  const title = [0.3, 0.7];
+  line(title[0], title[1], 0.1, 1.6);
+  let v = 0.17;
+  for (let row = 0; row < 22; row++) {
+    if (row % 6 === 5) { v += 0.022; continue; }
+    const end = row % 6 === 4 ? 0.3 + r3() * 0.35 : 0.8 + r3() * 0.07;
+    line(0.14, end, v, 1);
+    v += 0.032;
+  }
+  function line(u0, u1, vv, w) {
+    g.lineWidth = Math.max(0.6, 1.1 * S * w);
+    g.beginPath();
+    for (let i = 0; i <= 8; i++) {
+      const u = lerp(u0, u1, i / 8);
+      const [x, z] = corner(s, base, u, vv);
+      const p = P(x, z, y + bend(u, vv, L) + 0.05);
+      i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]);
+    }
+    g.stroke();
+  }
+}
+
+const squared = Array.from({ length: N }, (_, i) => ({ dx: 0, dz: 0, rot: 0, tone: 0.95 + (i % 3) * 0.015 }));
+function drawPile() {
+  for (let i = 0; i < pile.length; i++) {
+    drawStackAt({ x: PILE.x + (i % 2 ? 3 : -2), z: PILE.z + (i % 3) - 1, y: i * N * GAP, rot: pile[i] }, squared, 0, i === pile.length - 1);
+  }
+}
+
+function drawHand(side, amt, base) {
+  if (amt <= 0.001) return;
+  const sx = side < 0 ? -1 : 1;
+  // the hand holds the middle of a long side; out of view it rests below the desk edge
+  const edgeX = base.x + sx * (SW / 2 + 4 - squeeze * 2), edgeZ = base.z + 30;
+  const at = P(edgeX, edgeZ, base.y + 8);
+  const away = [at[0] + sx * 260 * S, H + 120 * S];
+  const wx = lerp(away[0], at[0], amt), wy = lerp(away[1], at[1], amt);
+  const ang = Math.atan2(wy - (H + 200 * S), wx - (wx + sx * 160 * S));
+  const lit = lampShade(edgeX, edgeZ);
+  g.save();
+  // sleeve
+  g.strokeStyle = '#262b36'; g.lineCap = 'round'; g.lineWidth = 46 * S;
+  g.beginPath(); g.moveTo(wx + sx * 70 * S, wy + 95 * S); g.lineTo(wx + sx * 240 * S, H + 260 * S); g.stroke();
+  g.strokeStyle = 'rgba(255,210,170,0.06)'; g.lineWidth = 2 * S;
+  g.beginPath(); g.moveTo(wx + sx * 60 * S, wy + 78 * S); g.lineTo(wx + sx * 230 * S, H + 240 * S); g.stroke();
+  // forearm to wrist
+  const skin = 'rgb(' + Math.round(150 * lit + 20) + ',' + Math.round(112 * lit + 14) + ',' + Math.round(90 * lit + 12) + ')';
+  const skinDark = 'rgb(' + Math.round(105 * lit + 12) + ',' + Math.round(76 * lit + 10) + ',' + Math.round(62 * lit + 8) + ')';
+  g.strokeStyle = skinDark; g.lineWidth = 30 * S;
+  g.beginPath(); g.moveTo(wx + sx * 18 * S, wy + 30 * S); g.lineTo(wx + sx * 72 * S, wy + 96 * S); g.stroke();
+  // palm against the side of the stack, fingers curling over the back, thumb on top
+  g.translate(wx, wy);
+  g.fillStyle = skinDark;
+  g.beginPath(); g.ellipse(sx * 14 * S, 14 * S, 22 * S, 34 * S, sx * -0.35, 0, 7); g.fill();
+  g.fillStyle = skin;
+  g.beginPath(); g.ellipse(sx * 10 * S, 8 * S, 19 * S, 30 * S, sx * -0.35, 0, 7); g.fill();
+  // fingers: a row of rounded strokes reaching back along the edge
+  g.strokeStyle = skin; g.lineWidth = 9 * S;
+  for (let f = 0; f < 4; f++) {
+    g.beginPath(); g.moveTo(sx * 2 * S, (-10 + f * 9) * S); g.quadraticCurveTo(sx * -6 * S, (-30 + f * 7) * S, sx * -14 * S, (-42 + f * 6) * S); g.stroke();
+  }
+  // thumb over the top sheet
+  g.strokeStyle = skin; g.lineWidth = 10 * S;
+  g.beginPath(); g.moveTo(sx * 4 * S, 20 * S); g.quadraticCurveTo(sx * -16 * S, 20 * S, sx * -26 * S, 12 * S); g.stroke();
+  g.fillStyle = 'rgba(255,225,190,0.25)';
+  g.beginPath(); g.ellipse(sx * -24 * S, 11 * S, 4 * S, 2.6 * S, 0, 0, 7); g.fill();
+  g.restore();
+}
+
+// dust shows only inside the cone of light, from the shade's mouth down to the pool
+function inCone(p) {
+  const a = P(-165, -150, 300), b = P(LIGHT.x, LIGHT.z);
+  const vx = b[0] - a[0], vy = b[1] - a[1], len2 = vx * vx + vy * vy;
+  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / len2));
+  const d = Math.hypot(p[0] - a[0] - vx * t, p[1] - a[1] - vy * t);
+  const half = (25 + 230 * t) * S;
+  return Math.max(0, 1 - d / half);
+}
+function drawMotes() {
+  for (const m of motes) {
+    const p = P(m.x, m.z, m.y);
+    const near = inCone(p);
+    if (near < 0.05) continue;
+    g.fillStyle = 'rgba(255,225,180,' + (m.a * Math.min(1, near * 1.6)) + ')';
+    g.beginPath(); g.arc(p[0], p[1], m.r * Math.max(1, S), 0, 7); g.fill();
+  }
+}
+
+function draw() {
+  g.save();
+  if (shake > 0) g.translate(0, Math.sin(shake * 30) * shake * 0.8);
+  drawDesk();
+  drawLamp();
+  drawMug();
+  drawPile();
+  if (STAPLER.show) drawStapler();
+  drawStackAt(stack, sheets, lift, true);
+  drawHand(-1, handL, stack);
+  drawHand(1, handR, stack);
+  drawMotes();
+  g.restore();
+  // a dark room around the lamp
+  const v = g.createRadialGradient(W * 0.45, H * 0.5, Math.min(W, H) * 0.3, W * 0.5, H * 0.5, Math.max(W, H) * 0.8);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)');
+  g.fillStyle = v; g.fillRect(0, 0, W, H);
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  step(dt); autoTap(); draw();
+  requestAnimationFrame(frame);
+}
+resize();
+addEventListener('resize', resize);
+c.addEventListener('pointerdown', e => { wake(); tap(); });
+addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Enter') { if (e.target === sndEl) return; e.preventDefault(); wake(); tap(); }
+});
+sndEl.addEventListener('click', e => {
+  e.stopPropagation(); soundOn = !soundOn;
+  try { localStorage.setItem('zim-put-down-sound', soundOn ? 'on' : 'off'); } catch (er) {}
+  if (soundOn) wake();
+  showCount();
+});
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
