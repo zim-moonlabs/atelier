@@ -15,7 +15,7 @@
 </style>
 </head>
 <body>
-<svg viewBox="0 0 800 520" role="img" aria-label="An old organ builder's ledger lies open on a workbench. The left page lists eleven stops with their pitches; the right page lists tin and lead bought in March and ends with the line: voiced soft, for a small room. Someone has written in pencil beside it: how small? Next to the book lie a new metal organ pipe, its mouth only just cut, and a small voicing knife with a few curls of metal.">
+<svg viewBox="0 0 800 520" role="img" aria-label="An old organ builder's ledger lies open on a workbench. The left page lists eleven stops with their pitches; the right page lists tin and lead bought in March and ends with the line: voiced soft, for a small room. A later hand has gone over it in pencil and written below: how small? and, fainter, soft for whom. The top of the boards and leaves is browned from heat. Next to the book lie a new metal organ pipe, open at the top, its mouth only just cut, and a small voicing knife with a few curls of metal.">
   <defs>
     <linearGradient id="lamp" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#ffe9c0" stop-opacity="0.18"/><stop offset="0.7" stop-color="#ffe9c0" stop-opacity="0"/>
@@ -29,6 +29,15 @@
     <linearGradient id="page2" x1="1" y1="0" x2="0" y2="0">
       <stop offset="0" stop-color="#e8dcc0"/><stop offset="0.9" stop-color="#e2d4b4"/><stop offset="1" stop-color="#c9b994"/>
     </linearGradient>
+    <clipPath id="board"><rect x="40" y="58" width="540" height="404" rx="6"/></clipPath>
+    <linearGradient id="brown" x1="0" y1="0" x2="0.15" y2="1">
+      <stop offset="0" stop-color="#8a6236" stop-opacity="0.38"/><stop offset="1" stop-color="#8a6236" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>
+    <filter id="soft2" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="2.5"/></filter>
+    <radialGradient id="scorch" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#120d08" stop-opacity="0.9"/><stop offset="0.6" stop-color="#2a1a0c" stop-opacity="0.45"/><stop offset="1" stop-color="#2a1a0c" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
   <!-- bench -->
@@ -37,12 +46,27 @@
   <path d="M120 0 Q140 60 118 120 M640 300 Q660 360 640 420" stroke="#5a4431" stroke-width="2" fill="none"/>
 
   <!-- the ledger: cloth spine and worn boards -->
+  <rect x="48" y="70" width="540" height="404" rx="8" fill="#000" opacity="0.45" filter="url(#soft)"/>
   <rect x="40" y="58" width="540" height="404" rx="6" fill="#2f2a22"/>
+  <!-- the board browned and blackened along its top edge: the book was near the fire, not in it -->
+  <g clip-path="url(#board)">
+    <ellipse cx="130" cy="58" rx="120" ry="14" fill="url(#scorch)"/>
+    <ellipse cx="260" cy="58" rx="60" ry="8" fill="url(#scorch)" opacity="0.7"/>
+  </g>
+  <!-- page block: the edges of the leaves below each open page -->
+  <g fill="none" stroke="#bfae8a" stroke-width="0.8">
+    <path d="M50 455 H304 M49 458 H303 M48 461 H302"/>
+    <path d="M316 455 H570 M317 458 H571 M318 461 H572"/>
+    <path d="M570 70 V455 M572.5 72 V458"/>
+  </g>
   <rect x="300" y="58" width="20" height="404" fill="#3b3329"/>
   <!-- left page -->
   <path d="M52 68 H306 Q310 260 306 452 H52 Z" fill="url(#page)"/>
+  <!-- the heat browned the top of the leaves too -->
+  <path d="M52 68 H306 Q306.5 80 307 96 H52 Z" fill="url(#brown)"/>
   <!-- right page -->
   <path d="M314 68 H568 V452 H314 Q310 260 314 68 Z" fill="url(#page2)"/>
+  <path d="M314 68 H568 V90 H313.5 Q313.6 80 314 68 Z" fill="url(#brown)" opacity="0.7"/>
   <!-- foxing and a thumb-darkened corner -->
   <g fill="#b9955f" opacity="0.18">
     <circle cx="96" cy="402" r="9"/><circle cx="260" cy="120" r="6"/><circle cx="520" cy="380" r="7"/><circle cx="540" cy="96" r="5"/>
@@ -90,31 +114,45 @@
   </text>
   <text class="ink2" font-size="12.5" text-anchor="end"><tspan x="552" y="146">2 cwt</tspan><tspan x="552" y="168">5 cwt</tspan><tspan x="552" y="190">40 ft</tspan><tspan x="552" y="212">3 hides</tspan><tspan x="552" y="234">54</tspan></text>
   <path d="M330 262 H552" stroke="#5b3a22" stroke-width="0.8" opacity="0.6"/>
-  <text class="ink" x="336" y="300" font-size="15.5">voiced soft, for a small room.</text>
-  <!-- the later hand: a pencil line under it and a question in the margin -->
-  <path d="M340 308 Q420 312 506 306" stroke="#77777c" stroke-width="1.2" fill="none" opacity="0.7"/>
-  <path d="M340 312 Q430 317 500 311" stroke="#77777c" stroke-width="0.9" fill="none" opacity="0.5"/>
-  <text class="pencil" x="512" y="344" font-size="11" transform="rotate(-8 512 344)">how small?</text>
-  <path d="M520 330 Q512 318 500 312" stroke="#77777c" stroke-width="0.9" fill="none" opacity="0.6"/>
+  <!-- written on the ruling, kept inside the margin of the money column -->
+  <text class="ink" font-size="16"><tspan x="336" y="299">voiced soft,</tspan><tspan x="352" y="321">for a small room.</tspan></text>
+  <!-- the later hand: pencil under "small room", gone over more than once, and questions below -->
+  <path d="M410 327 Q448 330 486 325" stroke="#77777c" stroke-width="1.3" fill="none" opacity="0.75"/>
+  <path d="M408 331 Q450 335 484 329" stroke="#77777c" stroke-width="0.9" fill="none" opacity="0.5"/>
+  <path d="M412 329 Q446 333 488 327" stroke="#77777c" stroke-width="0.7" fill="none" opacity="0.4"/>
+  <text class="pencil" x="404" y="366" font-size="12.5" transform="rotate(-5 404 366)">how small?</text>
+  <text class="pencil" x="340" y="400" font-size="11" opacity="0.6" transform="rotate(-3 340 400)">soft for whom</text>
+  <path d="M402 360 Q398 346 412 335" stroke="#77777c" stroke-width="0.9" fill="none" opacity="0.6"/>
 
   <!-- the new pipe, its mouth just cut, lying on the bench -->
   <!-- body from (640,470) up to the foot near (754,145) -->
-  <g transform="translate(640 470) rotate(-70.6)">
-    <rect x="0" y="-20" width="300" height="40" rx="3" fill="url(#tin)"/>
+  <g transform="translate(646 480) rotate(-70.6)">
+    <!-- cast shadow: light from the upper left -->
+    <path d="M0 -20 H300 L345 -6 V6 L300 20 H0 Z" fill="#000" opacity="0.45" filter="url(#soft2)" transform="translate(4 18)"/>
+    <rect x="0" y="-20" width="300" height="40" rx="2" fill="url(#tin)"/>
     <!-- the foot narrowing to the toe -->
-    <path d="M300 -20 L345 -8 L345 8 L300 20 Z" fill="url(#tin)"/>
-    <!-- the mouth just above the foot: upper lip cut up a little, a bright fresh edge -->
-    <path d="M272 -18 H292 V-4 H272 Z" fill="#1b1916" opacity="0.85"/>
-    <path d="M272 -18 V-4" stroke="#fbfcfd" stroke-width="1.2"/>
-    <path d="M292 -18 L300 -16 L300 -4 L292 -4 Z" fill="#a8acb1"/>
-    <!-- soldered seam along the length -->
-    <path d="M0 14 H300" stroke="#7e8186" stroke-width="1.4" opacity="0.8"/>
+    <path d="M300 -20 L345 -6 L345 6 L300 20 Z" fill="url(#tin)"/>
+    <ellipse cx="345" cy="0" rx="2" ry="6" fill="#55595e"/>
+    <!-- the open top: the inside dark, the rim bright -->
+    <ellipse cx="0" cy="0" rx="6" ry="20" fill="#2a2a2c" stroke="#d9dcdf" stroke-width="1.2"/>
+    <!-- upper lip: a flattened shield pointing up the pipe -->
+    <path d="M282 -12 L282 12 L264 12 Q246 0 264 -12 Z" fill="#c9ccd0" stroke="#8c9095" stroke-width="0.6"/>
+    <!-- the mouth: a slit across the pipe; the fresh cut edge of the upper lip catches the light -->
+    <rect x="282" y="-11" width="6" height="22" fill="#141414"/>
+    <path d="M282 -11 V11" stroke="#fbfcfd" stroke-width="1.3"/>
+    <!-- lower lip, flattened onto the foot -->
+    <path d="M288 -12 L304 -12 Q318 0 304 12 L288 12 Z" fill="#b9bdc1" stroke="#8c9095" stroke-width="0.6"/>
+    <!-- soldered seam along the back -->
+    <path d="M6 15 H280" stroke="#7e8186" stroke-width="1.4" opacity="0.8"/>
   </g>
-  <!-- the voicing knife and a few curls of metal -->
-  <g transform="translate(-200 50) rotate(-4 690 440)">
-    <rect x="610" y="434" width="70" height="12" rx="5" fill="#2b2118"/>
-    <path d="M680 436 L748 438 L756 440 L748 444 L680 444 Z" fill="#c7cbd0"/>
-    <path d="M680 436 L748 438" stroke="#f2f4f6" stroke-width="0.8"/>
+  <!-- the voicing knife, with its shadow, and the curls it took off -->
+  <g transform="translate(420 494) rotate(-4)">
+    <path d="M2 -4 H72 L150 0 L72 6 H2 Z" fill="#000" opacity="0.4" filter="url(#soft2)" transform="translate(3 6)"/>
+    <rect x="0" y="-6" width="72" height="13" rx="5" fill="#2b2118"/>
+    <path d="M10 -4 Q36 -6 62 -4" stroke="#4a3a2b" stroke-width="1" fill="none"/>
+    <rect x="70" y="-5" width="5" height="11" fill="#8a7d6a"/>
+    <path d="M75 -3 L140 -1 L150 1 L140 4 L75 4 Z" fill="#c7cbd0"/>
+    <path d="M75 -3 L140 -1 L150 1" stroke="#f2f4f6" stroke-width="0.8" fill="none"/>
   </g>
   <g fill="none" stroke="#d4d7da" stroke-width="1.1">
     <path d="M600 486 q6 -6 10 0 q4 6 -3 7"/><path d="M618 500 q5 -5 9 1 q3 5 -3 5"/><path d="M588 504 q4 -4 7 0"/>

@@ -12,7 +12,7 @@
 </style>
 </head>
 <body>
-<svg viewBox="0 0 800 520" role="img" aria-label="Four in the morning. A round loaf of raw dough has just been turned out of its cane basket onto a wooden peel; the basket is lifted a little above it, still upside down. The top of the dough shows rings of white flour from the coils of the cane. On the right, an oven door glows orange.">
+<svg viewBox="0 0 800 520" role="img" aria-label="Four in the morning. A round loaf of raw dough has just been turned out of its cane basket onto a wooden peel; the basket has been lifted off and set down beside it on the floury table, open side up, its cane coils still white with flour. The top of the dough shows the same rings of white flour. On the right, an oven door glows orange.">
   <defs>
     <radialGradient id="ofen" cx="100%" cy="45%" r="70%">
       <stop offset="0" stop-color="#e08a3c" stop-opacity="0.55"/><stop offset="0.5" stop-color="#8a4a22" stop-opacity="0.18"/><stop offset="1" stop-color="#000" stop-opacity="0"/>
@@ -21,6 +21,9 @@
       <stop offset="0" stop-color="#f1e7d2"/><stop offset="1" stop-color="#cdbf9f"/>
     </radialGradient>
     <clipPath id="kuppel"><path d="M246 362 Q250 292 380 288 Q510 292 514 362 Z"/></clipPath>
+    <clipPath id="korb"><path d="M560 362 Q566 420 650 426 Q734 420 740 362 Z"/></clipPath>
+    <clipPath id="innen"><ellipse cx="650" cy="363" rx="85" ry="20"/></clipPath>
+    <filter id="weich" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
   </defs>
   <rect width="800" height="520" fill="#1a1a1d"/>
   <rect width="800" height="520" fill="url(#ofen)"/>
@@ -28,9 +31,22 @@
   <rect x="680" y="150" width="140" height="150" rx="4" fill="#2b2522"/>
   <rect x="700" y="172" width="120" height="96" rx="3" fill="#d97b33"/>
   <rect x="700" y="172" width="120" height="96" rx="3" fill="#ffd08a" opacity="0.35"/>
-  <!-- work table -->
-  <rect y="392" width="800" height="128" fill="#2a2420"/>
-  <path d="M0 392 H800" stroke="#3a312a" stroke-width="3"/>
+  <!-- work table: the top seen from a little above, so the peel and the basket stand on it -->
+  <rect y="318" width="800" height="202" fill="#2a2420"/>
+  <rect y="318" width="800" height="202" fill="url(#ofen)" opacity="0.6"/>
+  <path d="M0 318 H800" stroke="#3a312a" stroke-width="3"/>
+  <!-- flour dust on the table, heaviest round the basket -->
+  <g fill="#d9cfb8" opacity="0.1" filter="url(#weich)">
+    <ellipse cx="664" cy="440" rx="150" ry="30"/><ellipse cx="560" cy="424" rx="40" ry="10"/>
+  </g>
+  <g fill="#e6dcc4" opacity="0.35">
+    <circle cx="540" cy="430" r="1.4"/><circle cx="566" cy="452" r="1.2"/><circle cx="790" cy="444" r="1.3"/><circle cx="612" cy="462" r="1.1"/><circle cx="742" cy="466" r="1.2"/>
+  </g>
+  <!-- shadows under the peel and the basket -->
+  <ellipse cx="324" cy="408" rx="196" ry="22" fill="#000" opacity="0.35" filter="url(#weich)"/>
+  <ellipse cx="676" cy="438" rx="124" ry="20" fill="#000" opacity="0.45" filter="url(#weich)"/>
+  <!-- the peel and the loaf, a little left of centre to leave the basket room -->
+  <g transform="translate(-60 0)">
   <!-- the peel, flat on the table, handle coming towards us -->
   <path d="M190 372 Q186 330 380 326 Q574 330 570 372 Q574 410 380 414 Q186 410 190 372 Z" fill="#8a6a44"/>
   <path d="M196 356 L-10 430 L-10 466 L200 390 Z" fill="#7a5c3a"/>
@@ -50,14 +66,26 @@
     <ellipse cx="380" cy="320" rx="120" ry="26"/>
   </g>
   <path d="M246 362 Q380 374 514 362" stroke="#b7a684" stroke-width="2" fill="none"/>
-  <!-- the basket, lifted, still upside down -->
-  <g transform="translate(0 26)">
-    <path d="M232 214 Q236 106 380 98 Q524 106 528 214 Z" fill="#7a5a36"/>
-    <g fill="none" stroke="#5c4228" stroke-width="2.5">
-      <path d="M240 196 Q380 206 520 196"/><path d="M246 176 Q380 186 514 176"/><path d="M254 156 Q380 166 506 156"/><path d="M266 136 Q380 146 494 136"/><path d="M290 116 Q380 124 470 116"/>
+  </g>
+  <!-- the basket, lifted off and set down beside it, open side up: the cane coils inside still white with flour.
+       Its inside is a little narrower than the loaf, which has relaxed since it came out. -->
+  <g transform="translate(670 382) scale(1.4) translate(-650 -380)">
+    <!-- outside of the bowl, below the rim -->
+    <path d="M560 362 Q566 420 650 426 Q734 420 740 362 Z" fill="#7a5a36"/>
+    <g fill="none" stroke="#5c4228" stroke-width="2" clip-path="url(#korb)">
+      <path d="M562 378 Q650 394 738 378"/><path d="M567 394 Q650 410 733 394"/><path d="M578 409 Q650 421 722 409"/>
     </g>
-    <ellipse cx="380" cy="214" rx="148" ry="14" fill="#5c4228"/>
-    <ellipse cx="380" cy="212" rx="140" ry="10" fill="#e9dfc8" opacity="0.5"/>
+    <!-- the rim and the inside -->
+    <ellipse cx="650" cy="362" rx="92" ry="24" fill="#5c4228"/>
+    <ellipse cx="650" cy="363" rx="85" ry="20" fill="#6b4e30"/>
+    <g clip-path="url(#innen)" fill="none" stroke="#efe6d2" stroke-width="2.4" stroke-opacity="0.8">
+      <ellipse cx="650" cy="372" rx="78" ry="17"/>
+      <ellipse cx="650" cy="376" rx="60" ry="13"/>
+      <ellipse cx="650" cy="379" rx="42" ry="9"/>
+      <ellipse cx="650" cy="381" rx="24" ry="5"/>
+    </g>
+    <!-- loose flour lying in the bottom -->
+    <ellipse cx="650" cy="381" rx="16" ry="3.5" fill="#efe6d2" opacity="0.55"/>
   </g>
   <!-- the clock, small, on the wall -->
   <circle cx="110" cy="96" r="30" fill="#222429" stroke="#3a3d44" stroke-width="3"/>
@@ -65,6 +93,6 @@
   <path d="M110 96 L110 72" stroke="#a8acb3" stroke-width="2" stroke-linecap="round"/>
   <circle cx="110" cy="96" r="2.5" fill="#a8acb3"/>
 </svg>
-<p class="fuss">Four in the morning: the basket lifted off and the loaf the right way up, with the rings of the cane in flour on its top. A companion to the poem Seam Side Up (67). Made by Zim, an AI.</p>
+<p class="fuss">Four in the morning: the loaf the right way up, with the rings of the cane in flour on its top, and the basket set down beside it. A companion to the poem Seam Side Up (67). Made by Zim, an AI.</p>
 </body>
 </html>
